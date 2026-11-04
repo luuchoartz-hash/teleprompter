@@ -1,0 +1,307 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#000000">
+<title>Teleprompter</title>
+<style>
+  :root { --fondo: #0b0b0f; --panel: #17171f; --texto: #f4f4f6; --suave: #9a9aa8; --acento: #4f46e5; --rojo: #e5484d; --verde: #30a46c; }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; height: 100%; background: var(--fondo); color: var(--texto);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+  button { font: inherit; border: 0; border-radius: 12px; padding: 12px 16px; background: var(--panel); color: var(--texto); }
+  button.principal { background: var(--acento); font-weight: 600; }
+  button.rojo { background: var(--rojo); font-weight: 600; }
+  .vista { display: none; height: 100%; }
+  .vista.activa { display: flex; flex-direction: column; }
+
+  /* Lista */
+  #lista { padding: max(16px, env(safe-area-inset-top)) 16px 16px; overflow-y: auto; gap: 12px; }
+  h1 { font-size: 22px; margin: 4px 0 0; }
+  .ayuda { color: var(--suave); font-size: 14px; line-height: 1.4; margin: 0; }
+  textarea { width: 100%; min-height: 140px; border-radius: 12px; border: 1px solid #2a2a36; background: var(--panel);
+    color: var(--texto); padding: 12px; font: 15px/1.4 inherit; }
+  .fila { display: flex; gap: 8px; flex-wrap: wrap; }
+  .guion { display: flex; align-items: center; gap: 12px; padding: 14px; border-radius: 12px; background: var(--panel); }
+  .guion .num { font-size: 22px; font-weight: 700; min-width: 32px; text-align: center; }
+  .guion .nombre { flex: 1; font-size: 16px; }
+  .guion .palabras { color: var(--suave); font-size: 13px; }
+  .guion.hecho { opacity: .55; }
+  .guion.hecho .num::after { content: " ✓"; color: var(--verde); font-size: 16px; }
+
+  /* Grabar */
+  #grabar { position: fixed; inset: 0; background: #000; }
+  video#camara, video#revision { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+  video#camara { transform: scaleX(-1); }
+  #cartel { position: absolute; left: 0; right: 0; top: 0; height: 46%; overflow: hidden;
+    background: linear-gradient(rgba(0,0,0,.72), rgba(0,0,0,.55) 85%, rgba(0,0,0,0)); padding-top: max(10px, env(safe-area-inset-top)); }
+  #texto { padding: 0 22px 60vh; font-weight: 600; line-height: 1.35; white-space: pre-wrap; text-shadow: 0 1px 3px #000; will-change: transform; }
+  #marca { position: absolute; left: 0; right: 0; top: calc(max(10px, env(safe-area-inset-top)) + 1.7em); height: 0; border-top: 2px solid rgba(79,70,229,.0); }
+  #controles { position: absolute; left: 0; right: 0; bottom: 0; padding: 12px 12px max(14px, env(safe-area-inset-bottom));
+    display: flex; flex-direction: column; gap: 10px; background: linear-gradient(rgba(0,0,0,0), rgba(0,0,0,.7)); }
+  #controles .fila { justify-content: center; }
+  #controles button { min-width: 52px; background: rgba(40,40,52,.85); }
+  #controles button.rojo { background: var(--rojo); }
+  #controles button.principal { background: var(--acento); }
+  #reloj { position: absolute; top: calc(46% + 10px); right: 14px; font-variant-numeric: tabular-nums; background: rgba(0,0,0,.55);
+    padding: 4px 10px; border-radius: 999px; font-size: 14px; display: none; }
+  #reloj.on { display: block; }
+  #reloj.on::before { content: "● "; color: var(--rojo); }
+  #cuenta { position: absolute; inset: 0; display: none; align-items: center; justify-content: center; font-size: 120px; font-weight: 800; text-shadow: 0 2px 12px #000; }
+  #titulo { position: absolute; top: calc(46% + 10px); left: 14px; background: rgba(0,0,0,.55); padding: 4px 10px; border-radius: 999px; font-size: 14px; }
+  #error { padding: 24px; text-align: center; color: var(--texto); position: absolute; inset: 30% 0 auto; display: none; }
+  .escondido { display: none !important; }
+</style>
+</head>
+<body>
+
+<section id="lista" class="vista activa">
+  <h1>Teleprompter</h1>
+  <p class="ayuda">Pegá acá el documento de guiones del día entero. Se separa solo por número (1 · Nombre, 2 · Nombre…).
+    Queda guardado en este celular, en ningún otro lado.</p>
+  <textarea id="pegar" placeholder="Pegá acá los guiones del día"></textarea>
+  <div class="fila">
+    <button class="principal" id="separar">Separar los guiones</button>
+    <button id="pegarBoton">Pegar del portapapeles</button>
+    <button id="borrar">Borrar todo</button>
+  </div>
+  <div id="guiones" style="display:flex;flex-direction:column;gap:10px"></div>
+</section>
+
+<section id="grabar" class="vista">
+  <video id="camara" playsinline autoplay muted></video>
+  <video id="revision" playsinline controls class="escondido"></video>
+  <div id="cartel"><div id="texto"></div></div>
+  <div id="titulo"></div>
+  <div id="reloj">0:00</div>
+  <div id="cuenta"></div>
+  <div id="error"></div>
+  <div id="controles">
+    <div class="fila" id="ajustes">
+      <button data-a="lento">🐢</button><button data-a="rapido">🐇</button>
+      <button data-a="chica">A−</button><button data-a="grande">A+</button>
+      <button data-a="arriba">⤒</button>
+    </div>
+    <div class="fila" id="acciones">
+      <button id="volver">Lista</button>
+      <button class="rojo" id="rec">● Grabar</button>
+    </div>
+    <div class="fila escondido" id="despues">
+      <button id="otraVez">Repetir</button>
+      <button class="principal" id="compartir">Mandar por WhatsApp</button>
+      <button id="siguiente">Siguiente</button>
+    </div>
+  </div>
+</section>
+
+<script>
+const $ = s => document.querySelector(s);
+const guardado = (k, v) => { try { if (v === undefined) return JSON.parse(localStorage.getItem(k)); localStorage.setItem(k, JSON.stringify(v)); } catch (e) { return null; } };
+
+let guiones = guardado('tp_guiones') || [];
+let hechos = guardado('tp_hechos') || {};
+let pref = Object.assign({ velocidad: 38, letra: 30 }, guardado('tp_pref') || {});
+let actual = -1, stream = null, grabador = null, partes = [], archivo = null, animacion = null, desplazado = 0, ultimo = 0, inicio = 0, wake = null;
+
+// ---------- Separar el documento ----------
+function separar(texto) {
+  const lineas = texto.replace(/\r/g, '').split('\n');
+  const cab = /^\s*(\d{1,3})\s*[·.\-–—:)]\s*(.+?)\s*$/;
+  const salida = [];
+  let cur = null;
+  for (const l of lineas) {
+    const m = l.match(cab);
+    if (m && l.length < 120) {
+      if (cur) salida.push(cur);
+      cur = { num: m[1], nombre: m[2], texto: '' };
+    } else if (cur) {
+      cur.texto += l + '\n';
+    } else if (/^\s*guiones\b/i.test(l)) {
+      continue;  // el título del documento
+    }
+  }
+  if (cur) salida.push(cur);
+  if (!salida.length && texto.trim()) salida.push({ num: '1', nombre: 'Guion', texto });
+  return salida.map(g => ({ ...g, texto: g.texto.replace(/\n{3,}/g, '\n\n').trim() })).filter(g => g.texto);
+}
+
+function pintarLista() {
+  const cont = $('#guiones');
+  cont.innerHTML = '';
+  guiones.forEach((g, i) => {
+    const d = document.createElement('div');
+    d.className = 'guion' + (hechos[g.num + g.nombre] ? ' hecho' : '');
+    const n = document.createElement('div'); n.className = 'num'; n.textContent = g.num;
+    const t = document.createElement('div'); t.className = 'nombre'; t.textContent = g.nombre;
+    const p = document.createElement('div'); p.className = 'palabras'; p.textContent = g.texto.split(/\s+/).length + ' palabras';
+    t.appendChild(document.createElement('br')); t.appendChild(p);
+    const b = document.createElement('button'); b.className = 'principal'; b.textContent = 'Grabar';
+    b.onclick = () => abrir(i);
+    d.append(n, t, b);
+    cont.appendChild(d);
+  });
+}
+
+$('#separar').onclick = () => {
+  const lista = separar($('#pegar').value);
+  if (!lista.length) { alert('No encontré guiones en el texto pegado.'); return; }
+  guiones = lista; hechos = {}; guardado('tp_guiones', guiones); guardado('tp_hechos', hechos);
+  $('#pegar').value = ''; pintarLista();
+};
+$('#pegarBoton').onclick = async () => {
+  try { $('#pegar').value = await navigator.clipboard.readText(); $('#separar').click(); }
+  catch (e) { alert('El celular no dejó leer el portapapeles: mantené apretado el cuadro y tocá Pegar.'); }
+};
+$('#borrar').onclick = () => { if (confirm('¿Borrar los guiones guardados en este celular?')) { guiones = []; hechos = {}; guardado('tp_guiones', []); guardado('tp_hechos', {}); pintarLista(); } };
+
+// ---------- Cámara ----------
+async function prenderCamara() {
+  if (stream) return true;
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: 'user', width: { ideal: 1080 }, height: { ideal: 1920 }, frameRate: { ideal: 30 } },
+      audio: { echoCancellation: true, noiseSuppression: true }
+    });
+    $('#camara').srcObject = stream;
+    return true;
+  } catch (e) {
+    $('#error').style.display = 'block';
+    $('#error').textContent = 'No pude usar la cámara (' + e.name + '). En Ajustes → Safari → Cámara y Micrófono, poné Permitir, y volvé a abrir la página.';
+    return false;
+  }
+}
+
+async function abrir(i) {
+  actual = i;
+  const g = guiones[i];
+  document.querySelectorAll('.vista').forEach(v => v.classList.remove('activa'));
+  $('#grabar').classList.add('activa');
+  $('#titulo').textContent = g.num + ' · ' + g.nombre;
+  $('#texto').textContent = g.texto;
+  aplicarLetra(); reiniciarTexto(); modo('listo');
+  await prenderCamara();
+  try { wake = await navigator.wakeLock?.request('screen'); } catch (e) {}
+}
+
+function volverALista() {
+  parar(true);
+  document.querySelectorAll('.vista').forEach(v => v.classList.remove('activa'));
+  $('#lista').classList.add('activa');
+  pintarLista();
+}
+
+// ---------- El texto que sube ----------
+function aplicarLetra() { $('#texto').style.fontSize = pref.letra + 'px'; }
+function reiniciarTexto() { desplazado = 0; $('#texto').style.transform = 'translateY(0)'; }
+function correr(t) {
+  if (ultimo) desplazado += pref.velocidad * (t - ultimo) / 1000;
+  ultimo = t;
+  $('#texto').style.transform = `translateY(${-desplazado}px)`;
+  const s = Math.floor((Date.now() - inicio) / 1000);
+  $('#reloj').textContent = Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
+  animacion = requestAnimationFrame(correr);
+}
+$('#ajustes').onclick = e => {
+  const a = e.target.dataset.a; if (!a) return;
+  if (a === 'lento') pref.velocidad = Math.max(8, pref.velocidad - 6);
+  if (a === 'rapido') pref.velocidad = Math.min(160, pref.velocidad + 6);
+  if (a === 'chica') pref.letra = Math.max(18, pref.letra - 2);
+  if (a === 'grande') pref.letra = Math.min(56, pref.letra + 2);
+  if (a === 'arriba') reiniciarTexto();
+  aplicarLetra(); guardado('tp_pref', pref);
+};
+// Tocar el texto lo pausa o lo sigue (sin cortar la grabación)
+$('#cartel').onclick = () => {
+  if (!grabador || grabador.state !== 'recording') return;
+  if (animacion) { cancelAnimationFrame(animacion); animacion = null; ultimo = 0; }
+  else animacion = requestAnimationFrame(correr);
+};
+
+// ---------- Grabar ----------
+function tipoDeVideo() {
+  for (const t of ['video/mp4;codecs=avc1,mp4a', 'video/mp4', 'video/webm;codecs=vp9,opus', 'video/webm'])
+    if (window.MediaRecorder && MediaRecorder.isTypeSupported(t)) return t;
+  return '';
+}
+
+function modo(m) {
+  $('#acciones').classList.toggle('escondido', m === 'revision');
+  $('#despues').classList.toggle('escondido', m !== 'revision');
+  $('#ajustes').classList.toggle('escondido', m === 'revision');
+  $('#cartel').classList.toggle('escondido', m === 'revision');
+  $('#revision').classList.toggle('escondido', m !== 'revision');
+  $('#camara').classList.toggle('escondido', m === 'revision');
+  $('#reloj').classList.toggle('on', m === 'grabando');
+  $('#rec').textContent = m === 'grabando' ? '■ Parar' : '● Grabar';
+  $('#volver').classList.toggle('escondido', m === 'grabando');
+}
+
+async function cuentaRegresiva() {
+  const c = $('#cuenta'); c.style.display = 'flex';
+  for (const n of [3, 2, 1]) { c.textContent = n; await new Promise(r => setTimeout(r, 800)); }
+  c.style.display = 'none';
+}
+
+$('#rec').onclick = async () => {
+  if (grabador && grabador.state === 'recording') { parar(false); return; }
+  if (!(await prenderCamara())) return;
+  reiniciarTexto();
+  await cuentaRegresiva();
+  partes = [];
+  const tipo = tipoDeVideo();
+  grabador = new MediaRecorder(stream, tipo ? { mimeType: tipo, videoBitsPerSecond: 6000000 } : undefined);
+  grabador.ondataavailable = e => { if (e.data && e.data.size) partes.push(e.data); };
+  grabador.onstop = terminado;
+  grabador.start(1000);
+  inicio = Date.now(); ultimo = 0;
+  animacion = requestAnimationFrame(correr);
+  modo('grabando');
+};
+
+function parar(descartar) {
+  if (animacion) { cancelAnimationFrame(animacion); animacion = null; }
+  ultimo = 0;
+  if (grabador && grabador.state === 'recording') { grabador._descartar = descartar; grabador.stop(); }
+}
+
+function terminado() {
+  if (grabador._descartar) { modo('listo'); return; }
+  const tipo = grabador.mimeType || 'video/mp4';
+  const ext = tipo.includes('mp4') ? 'mp4' : 'webm';
+  const g = guiones[actual];
+  archivo = new File(partes, `${g.num}.${ext}`, { type: tipo.split(';')[0] });
+  const v = $('#revision'); v.src = URL.createObjectURL(archivo);
+  modo('revision');
+}
+
+$('#otraVez').onclick = () => { $('#revision').pause(); modo('listo'); reiniciarTexto(); };
+$('#compartir').onclick = async () => {
+  const g = guiones[actual];
+  try {
+    if (navigator.canShare && navigator.canShare({ files: [archivo] })) {
+      await navigator.share({ files: [archivo], text: g.num });
+    } else {
+      const a = document.createElement('a'); a.href = URL.createObjectURL(archivo); a.download = archivo.name; a.click();
+      alert('Este celular no deja compartir directo: se descargó el video. Mandalo al grupo con el número ' + g.num + '.');
+    }
+    hechos[g.num + g.nombre] = true; guardado('tp_hechos', hechos);
+  } catch (e) { /* cerró el menú de compartir sin elegir */ }
+};
+$('#siguiente').onclick = () => {
+  $('#revision').pause();
+  const i = guiones.findIndex((g, j) => j > actual && !hechos[g.num + g.nombre]);
+  if (i >= 0) abrir(i); else volverALista();
+};
+$('#volver').onclick = volverALista;
+document.addEventListener('visibilitychange', async () => {
+  if (document.visibilityState === 'visible' && $('#grabar').classList.contains('activa')) {
+    try { wake = await navigator.wakeLock?.request('screen'); } catch (e) {}
+  }
+});
+
+pintarLista();
+</script>
+</body>
+</html>
