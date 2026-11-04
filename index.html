@@ -61,14 +61,18 @@
 
 <section id="lista" class="vista activa">
   <h1>Teleprompter</h1>
-  <p class="ayuda">Pegá acá el documento de guiones del día entero. Se separa solo por número (1 · Nombre, 2 · Nombre…).
-    Queda guardado en este celular, en ningún otro lado.</p>
-  <textarea id="pegar" placeholder="Pegá acá los guiones del día"></textarea>
-  <div class="fila">
-    <button class="principal" id="separar">Separar los guiones</button>
-    <button id="pegarBoton">Pegar del portapapeles</button>
-    <button id="borrar">Borrar todo</button>
-  </div>
+  <p class="ayuda" id="estadoDia">Buscando los guiones de hoy…</p>
+  <div class="fila"><button id="actualizar">Actualizar</button></div>
+  <details id="aMano">
+    <summary class="ayuda">Pegar guiones a mano</summary>
+    <p class="ayuda">Pegá el documento de guiones entero. Se separa solo por número (1 · Nombre, 2 · Nombre…).</p>
+    <textarea id="pegar" placeholder="Pegá acá los guiones"></textarea>
+    <div class="fila">
+      <button class="principal" id="separar">Separar los guiones</button>
+      <button id="pegarBoton">Pegar del portapapeles</button>
+      <button id="borrar">Borrar todo</button>
+    </div>
+  </details>
   <div id="guiones" style="display:flex;flex-direction:column;gap:10px"></div>
 </section>
 
@@ -191,6 +195,7 @@ async function abrir(i) {
 
 function volverALista() {
   parar(true);
+  setTimeout(cargarDelDia, 300);
   document.querySelectorAll('.vista').forEach(v => v.classList.remove('activa'));
   $('#lista').classList.add('activa');
   pintarLista();
@@ -306,7 +311,42 @@ document.addEventListener('visibilitychange', async () => {
   }
 });
 
+// ---------- Los guiones del día, solos ----------
+// La PC publica hoy.json cifrado. La clave llega una sola vez en el link (#k=...), queda en este celular y nunca
+// viaja al servidor: el repositorio es público, pero sin la clave no se lee nada.
+const b64 = s => { s = s.replace(/-/g, '+').replace(/_/g, '/'); while (s.length % 4) s += '=';
+  return Uint8Array.from(atob(s), c => c.charCodeAt(0)); };
+
+async function cargarDelDia() {
+  const enLink = new URLSearchParams(location.hash.slice(1)).get('k');
+  if (enLink) { guardado('tp_clave', enLink); history.replaceState(null, '', location.pathname); }
+  const clave = enLink || guardado('tp_clave');
+  if (!clave) { $('#estadoDia').textContent = 'Este celular todavía no tiene la clave: abrí el link que te pasó Claude una vez y listo.'; $('#aMano').open = true; return; }
+  try {
+    const r = await fetch('hoy.json?t=' + Date.now(), { cache: 'no-store' });
+    if (!r.ok) throw new Error('no hay guiones publicados');
+    const j = await r.json();
+    const k = await crypto.subtle.importKey('raw', b64(clave), 'AES-GCM', false, ['decrypt']);
+    const plano = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: b64(j.iv) }, k, b64(j.datos));
+    const d = JSON.parse(new TextDecoder().decode(plano));
+    if (guardado('tp_fecha') !== d.fecha) { hechos = {}; guardado('tp_fecha', d.fecha); }
+    guiones = d.guiones.map(g => ({ num: g.num, nombre: g.nombre + (g.usuario ? ' (@' + g.usuario + ')' : ''), texto: g.texto }));
+    d.guiones.forEach((g, i) => { if (g.hecho) hechos[guiones[i].num + guiones[i].nombre] = true; });
+    guardado('tp_guiones', guiones); guardado('tp_hechos', hechos);
+    const faltan = guiones.filter(g => !hechos[g.num + g.nombre]).length;
+    $('#estadoDia').textContent = `Guiones de hoy, ${d.dia}: ${guiones.length} (te faltan ${faltan}). Se actualizan solos.`;
+    pintarLista();
+  } catch (e) {
+    $('#estadoDia').textContent = 'No pude traer los guiones de hoy (' + (e.message || e.name) + '). Tocá Actualizar o pegalos a mano.';
+  }
+}
+$('#actualizar').onclick = cargarDelDia;
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible' && $('#lista').classList.contains('activa')) cargarDelDia();
+});
+
 pintarLista();
+cargarDelDia();
 </script>
 </body>
 </html>
