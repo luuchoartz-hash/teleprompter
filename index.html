@@ -33,7 +33,8 @@
 
   /* Grabar */
   #grabar { position: fixed; inset: 0; background: #000; }
-  video#camara, video#revision { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+  video#camara, video#revision { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; background: #000; }
+  #grabar.llenar video#camara { object-fit: cover; }
   video#camara { transform: scaleX(-1); }
   #cartel { position: absolute; left: 0; right: 0; top: 0; height: 46%; overflow: hidden;
     background: linear-gradient(rgba(0,0,0,.72), rgba(0,0,0,.55) 85%, rgba(0,0,0,0)); padding-top: max(10px, env(safe-area-inset-top)); }
@@ -50,6 +51,7 @@
   #reloj.on { display: block; }
   #reloj.on::before { content: "● "; color: var(--rojo); }
   #cuenta { position: absolute; inset: 0; display: none; align-items: center; justify-content: center; font-size: 120px; font-weight: 800; text-shadow: 0 2px 12px #000; }
+  #resolucion { position: absolute; top: calc(46% + 44px); left: 14px; font-size: 11px; color: var(--suave); }
   #titulo { position: absolute; top: calc(46% + 10px); left: 14px; background: rgba(0,0,0,.55); padding: 4px 10px; border-radius: 999px; font-size: 14px; }
   #error { padding: 24px; text-align: center; color: var(--texto); position: absolute; inset: 30% 0 auto; display: none; }
   .escondido { display: none !important; }
@@ -74,7 +76,7 @@
   <video id="camara" playsinline autoplay muted></video>
   <video id="revision" playsinline controls class="escondido"></video>
   <div id="cartel"><div id="texto"></div></div>
-  <div id="titulo"></div>
+  <div id="titulo"></div><div id="resolucion"></div>
   <div id="reloj">0:00</div>
   <div id="cuenta"></div>
   <div id="error"></div>
@@ -82,7 +84,7 @@
     <div class="fila" id="ajustes">
       <button data-a="lento">🐢</button><button data-a="rapido">🐇</button>
       <button data-a="chica">A−</button><button data-a="grande">A+</button>
-      <button data-a="arriba">⤒</button>
+      <button data-a="arriba">⤒</button><button data-a="encuadre">⛶</button>
     </div>
     <div class="fila" id="acciones">
       <button id="volver">Lista</button>
@@ -161,10 +163,11 @@ async function prenderCamara() {
   if (stream) return true;
   try {
     stream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: 'user', width: { ideal: 1080 }, height: { ideal: 1920 }, frameRate: { ideal: 30 } },
+      video: { facingMode: 'user', width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 30 } },
       audio: { echoCancellation: true, noiseSuppression: true }
     });
     $('#camara').srcObject = stream;
+    $('#camara').onloadedmetadata = () => { $('#resolucion').textContent = $('#camara').videoWidth + '×' + $('#camara').videoHeight; };
     return true;
   } catch (e) {
     $('#error').style.display = 'block';
@@ -181,6 +184,7 @@ async function abrir(i) {
   $('#titulo').textContent = g.num + ' · ' + g.nombre;
   $('#texto').textContent = g.texto;
   aplicarLetra(); reiniciarTexto(); modo('listo');
+  $('#grabar').classList.toggle('llenar', !!pref.llenar);
   await prenderCamara();
   try { wake = await navigator.wakeLock?.request('screen'); } catch (e) {}
 }
@@ -210,6 +214,7 @@ $('#ajustes').onclick = e => {
   if (a === 'chica') pref.letra = Math.max(18, pref.letra - 2);
   if (a === 'grande') pref.letra = Math.min(56, pref.letra + 2);
   if (a === 'arriba') reiniciarTexto();
+  if (a === 'encuadre') { pref.llenar = !pref.llenar; $('#grabar').classList.toggle('llenar', pref.llenar); }
   aplicarLetra(); guardado('tp_pref', pref);
 };
 // Tocar el texto lo pausa o lo sigue (sin cortar la grabación)
