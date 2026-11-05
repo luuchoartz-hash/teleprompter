@@ -54,6 +54,7 @@
   #resolucion { position: absolute; top: calc(46% + 44px); left: 14px; font-size: 11px; color: var(--suave); }
   #titulo { position: absolute; top: calc(46% + 10px); left: 14px; background: rgba(0,0,0,.55); padding: 4px 10px; border-radius: 999px; font-size: 14px; }
   #error { padding: 24px; text-align: center; color: var(--texto); position: absolute; inset: 30% 0 auto; display: none; }
+  #subidas { position: absolute; top: 12px; left: 14px; background: rgba(0,0,0,.6); padding: 4px 10px; border-radius: 999px; font-size: 13px; }
   .escondido { display: none !important; }
 </style>
 </head>
@@ -61,6 +62,8 @@
 
 <section id="lista" class="vista activa">
   <h1>Teleprompter</h1>
+  <p class="ayuda escondido" id="subidasLista"></p>
+  <div class="fila escondido" id="filaReintentar"><button class="principal" id="reintentar">Reintentar los que fallaron</button></div>
   <p class="ayuda" id="estadoDia">Buscando los guiones de hoy…</p>
   <div class="fila"><button id="actualizar">Actualizar</button></div>
   <details id="aMano">
@@ -81,6 +84,7 @@
   <video id="revision" playsinline controls class="escondido"></video>
   <div id="cartel"><div id="texto"></div></div>
   <div id="titulo"></div><div id="resolucion"></div>
+  <div id="subidas" class="escondido"></div>
   <div id="reloj">0:00</div>
   <div id="cuenta"></div>
   <div id="error"></div>
@@ -96,8 +100,7 @@
     </div>
     <div class="fila escondido" id="despues">
       <button id="otraVez">Repetir</button>
-      <button class="principal" id="compartir">Mandar por WhatsApp</button>
-      <button id="siguiente">Siguiente</button>
+      <button class="principal" id="compartir">Enviar y seguir</button>
     </div>
   </div>
 </section>
@@ -109,6 +112,7 @@ const guardado = (k, v) => { try { if (v === undefined) return JSON.parse(localS
 let guiones = guardado('tp_guiones') || [];
 let hechos = guardado('tp_hechos') || {};
 let pref = Object.assign({ velocidad: 38, letra: 30 }, guardado('tp_pref') || {});
+let subida = guardado('tp_subida') || '', cola = [];
 let actual = -1, stream = null, grabador = null, partes = [], archivo = null, animacion = null, desplazado = 0, ultimo = 0, inicio = 0, wake = null;
 
 // ---------- Separar el documento ----------
@@ -261,7 +265,7 @@ $('#rec').onclick = async () => {
   await cuentaRegresiva();
   partes = [];
   const tipo = tipoDeVideo();
-  grabador = new MediaRecorder(stream, tipo ? { mimeType: tipo, videoBitsPerSecond: 6000000 } : undefined);
+  grabador = new MediaRecorder(stream, tipo ? { mimeType: tipo, videoBitsPerSecond: 4000000 } : undefined);
   grabador.ondataavailable = e => { if (e.data && e.data.size) partes.push(e.data); };
   grabador.onstop = terminado;
   grabador.start(1000);
@@ -287,23 +291,72 @@ function terminado() {
 }
 
 $('#otraVez').onclick = () => { $('#revision').pause(); modo('listo'); reiniciarTexto(); };
-$('#compartir').onclick = async () => {
-  const g = guiones[actual];
-  try {
-    if (navigator.canShare && navigator.canShare({ files: [archivo] })) {
-      await navigator.share({ files: [archivo], text: g.num });
-    } else {
-      const a = document.createElement('a'); a.href = URL.createObjectURL(archivo); a.download = archivo.name; a.click();
-      alert('Este celular no deja compartir directo: se descargó el video. Mandalo al grupo con el número ' + g.num + '.');
-    }
-    hechos[g.num + g.nombre] = true; guardado('tp_hechos', hechos);
-  } catch (e) { /* cerró el menú de compartir sin elegir */ }
-};
-$('#siguiente').onclick = () => {
+// ---------- Enviar: el video sube solo a la PC y Claude lo manda por WhatsApp ----------
+function siguiente() {
   $('#revision').pause();
   const i = guiones.findIndex((g, j) => j > actual && !hechos[g.num + g.nombre]);
   if (i >= 0) abrir(i); else volverALista();
+}
+
+function pintarSubidas() {
+  const activas = cola.filter(c => c.estado !== 'falló');
+  const malas = cola.filter(c => c.estado === 'falló');
+  const sub = activas[0];
+  const txt = (sub ? `Subiendo ${sub.nombre}: ${sub.pct || 0}%` + (activas.length > 1 ? ` (y ${activas.length - 1} más)` : '') : '')
+    + (malas.length ? (sub ? ' · ' : '') + `⚠️ No subieron: ${malas.map(m => m.nombre).join(', ')}` : '');
+  for (const s of ['#subidas', '#subidasLista']) { $(s).textContent = txt; $(s).classList.toggle('escondido', !txt); }
+  $('#filaReintentar').classList.toggle('escondido', !malas.length);
+}
+
+function subirUno(c) {
+  return new Promise((ok, mal) => {
+    const x = new XMLHttpRequest();
+    x.open('POST', subida + '/subir');
+    x.setRequestHeader('X-Clave', c.clave);
+    x.setRequestHeader('X-Numero', c.id);
+    x.setRequestHeader('Content-Type', 'video/mp4');
+    x.upload.onprogress = e => { if (e.lengthComputable) { c.pct = Math.round(e.loaded * 100 / e.total); pintarSubidas(); } };
+    x.onload = () => x.status === 200 ? ok() : mal(new Error('HTTP ' + x.status));
+    x.onerror = () => mal(new Error('red'));
+    x.send(c.archivo);
+  });
+}
+
+let subiendo = false;
+async function procesarCola() {
+  if (subiendo) return;
+  subiendo = true;
+  for (;;) {
+    const c = cola.find(x => x.estado !== 'falló');
+    if (!c) break;
+    let bien = false;
+    for (let intento = 0; intento < 4 && !bien; intento++) {
+      try {
+        if (intento) { await new Promise(r => setTimeout(r, 4000 * intento)); await cargarDelDia(); }  // el link pudo cambiar
+        c.pct = 0; pintarSubidas();
+        await subirUno(c);
+        bien = true;
+      } catch (e) { c.error = e.message; }
+    }
+    if (bien) cola.splice(cola.indexOf(c), 1); else c.estado = 'falló';
+    pintarSubidas();
+  }
+  subiendo = false;
+}
+$('#reintentar').onclick = () => { cola.forEach(c => { delete c.estado; }); pintarSubidas(); procesarCola(); };
+
+$('#compartir').onclick = async () => {
+  const g = guiones[actual];
+  if (!subida || !g.id) { alert('Todavía no está lista la subida automática: tocá Actualizar en la lista y probá de nuevo.'); return; }
+  const bytes = new TextEncoder().encode(guardado('tp_clave') || '');
+  const hash = await crypto.subtle.digest('SHA-256', bytes);
+  const clave = [...new Uint8Array(hash)].map(b => b.toString(16).padStart(2, '0')).join('');
+  cola.push({ id: g.id, nombre: g.nombre, archivo, clave });
+  hechos[g.num + g.nombre] = true; guardado('tp_hechos', hechos);
+  pintarSubidas(); procesarCola();
+  siguiente();
 };
+window.addEventListener('beforeunload', e => { if (cola.length) { e.preventDefault(); e.returnValue = ''; } });
 $('#volver').onclick = volverALista;
 document.addEventListener('visibilitychange', async () => {
   if (document.visibilityState === 'visible' && $('#grabar').classList.contains('activa')) {
@@ -330,7 +383,8 @@ async function cargarDelDia() {
     const plano = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: b64(j.iv) }, k, b64(j.datos));
     const d = JSON.parse(new TextDecoder().decode(plano));
     if (guardado('tp_fecha') !== d.fecha) { hechos = {}; guardado('tp_fecha', d.fecha); }
-    guiones = d.guiones.map(g => ({ num: g.num, nombre: g.nombre + (g.usuario ? ' (@' + g.usuario + ')' : ''), texto: g.texto }));
+    subida = d.subida || ''; guardado('tp_subida', subida);
+    guiones = d.guiones.map(g => ({ num: g.num, id: g.id, nombre: g.nombre + (g.usuario ? ' (@' + g.usuario + ')' : ''), texto: g.texto }));
     d.guiones.forEach((g, i) => { if (g.hecho) hechos[guiones[i].num + guiones[i].nombre] = true; });
     guardado('tp_guiones', guiones); guardado('tp_hechos', hechos);
     const faltan = guiones.filter(g => !hechos[g.num + g.nombre]).length;
