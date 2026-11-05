@@ -269,7 +269,7 @@ $('#rec').onclick = async () => {
   await cuentaRegresiva();
   partes = [];
   const tipo = tipoDeVideo();
-  grabador = new MediaRecorder(stream, tipo ? { mimeType: tipo, videoBitsPerSecond: 4000000 } : undefined);
+  grabador = new MediaRecorder(stream, tipo ? { mimeType: tipo, videoBitsPerSecond: guiones[actual].toma ? 2500000 : 4000000 } : undefined);
   grabador.ondataavailable = e => { if (e.data && e.data.size) partes.push(e.data); };
   grabador.onstop = terminado;
   grabador.start(1000);
@@ -317,7 +317,7 @@ function subirUno(c) {
     const x = new XMLHttpRequest();
     x.open('POST', subida + '/subir');
     x.setRequestHeader('X-Clave', c.clave);
-    x.setRequestHeader('X-Numero', c.id);
+    if (c.toma) x.setRequestHeader('X-Toma', c.toma); else x.setRequestHeader('X-Numero', c.id);
     x.setRequestHeader('Content-Type', 'video/mp4');
     x.upload.onprogress = e => { if (e.lengthComputable) { c.pct = Math.round(e.loaded * 100 / e.total); pintarSubidas(); } };
     x.onload = () => x.status === 200 ? ok() : mal(new Error('HTTP ' + x.status));
@@ -351,11 +351,11 @@ $('#reintentar').onclick = () => { cola.forEach(c => { delete c.estado; }); pint
 
 $('#compartir').onclick = async () => {
   const g = guiones[actual];
-  if (!subida || !g.id) { alert('Todavía no está lista la subida automática: tocá Actualizar en la lista y probá de nuevo.'); return; }
+  if (!subida || !(g.id || g.toma)) { alert('Todavía no está lista la subida automática: tocá Actualizar en la lista y probá de nuevo.'); return; }
   const bytes = new TextEncoder().encode(guardado('tp_clave') || '');
   const hash = await crypto.subtle.digest('SHA-256', bytes);
   const clave = [...new Uint8Array(hash)].map(b => b.toString(16).padStart(2, '0')).join('');
-  cola.push({ id: g.id, nombre: g.nombre, archivo, clave });
+  cola.push({ id: g.id, toma: g.toma, nombre: g.nombre, archivo, clave });
   hechos[g.num + g.nombre] = true; guardado('tp_hechos', hechos);
   pintarSubidas(); procesarCola();
   siguiente();
@@ -388,8 +388,8 @@ async function cargarDelDia() {
     const d = JSON.parse(new TextDecoder().decode(plano));
     if (guardado('tp_fecha') !== d.fecha) { hechos = {}; guardado('tp_fecha', d.fecha); }
     subida = d.subida || ''; guardado('tp_subida', subida);
-    guiones = d.guiones.map(g => ({ num: g.num, id: g.id, hace: g.hace, nombre: g.nombre + (g.usuario ? ' (@' + g.usuario + ')' : ''), texto: g.texto }));
-    d.guiones.forEach((g, i) => { if (g.hecho) hechos[guiones[i].num + guiones[i].nombre] = true; });
+    guiones = d.tomas ? d.tomas.map(g => ({ ...g })) : d.guiones.map(g => ({ num: g.num, id: g.id, hace: g.hace, nombre: g.nombre + (g.usuario ? ' (@' + g.usuario + ')' : ''), texto: g.texto }));
+    if (!d.tomas) d.guiones.forEach((g, i) => { if (g.hecho) hechos[guiones[i].num + guiones[i].nombre] = true; });
     guardado('tp_guiones', guiones); guardado('tp_hechos', hechos);
     const faltan = guiones.filter(g => !hechos[g.num + g.nombre]).length;
     $('#estadoDia').textContent = `Guiones de hoy, ${d.dia}: ${guiones.length} (te faltan ${faltan}). Actualizado a las ${new Date().toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}.`;
