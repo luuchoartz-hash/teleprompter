@@ -38,7 +38,7 @@
   video#camara { transform: scaleX(-1); }
   #cartel { position: absolute; left: 0; right: 0; top: 0; height: 46%; overflow: hidden;
     background: linear-gradient(rgba(0,0,0,.72), rgba(0,0,0,.55) 85%, rgba(0,0,0,0)); padding-top: max(10px, env(safe-area-inset-top)); }
-  #texto { padding: 0 22px 60vh; font-weight: 600; line-height: 1.35; white-space: pre-wrap; text-shadow: 0 1px 3px #000; will-change: transform; }
+  #texto { max-width: 640px; margin: 0 auto; padding: 0 22px 60vh; font-weight: 600; line-height: 1.35; white-space: pre-wrap; text-shadow: 0 1px 3px #000; will-change: transform; }
   #marca { position: absolute; left: 0; right: 0; top: calc(max(10px, env(safe-area-inset-top)) + 1.7em); height: 0; border-top: 2px solid rgba(79,70,229,.0); }
   #controles { position: absolute; left: 0; right: 0; bottom: 0; padding: 12px 12px max(14px, env(safe-area-inset-bottom));
     display: flex; flex-direction: column; gap: 10px; background: linear-gradient(rgba(0,0,0,0), rgba(0,0,0,.7)); }
@@ -56,6 +56,15 @@
   #error { padding: 24px; text-align: center; color: var(--texto); position: absolute; inset: 30% 0 auto; display: none; }
   #subidas { position: absolute; top: 12px; left: 14px; background: rgba(0,0,0,.6); padding: 4px 10px; border-radius: 999px; font-size: 13px; }
   #recuerdo { position: absolute; top: calc(46% + 46px); left: 14px; right: 14px; background: rgba(0,0,0,.7); padding: 10px 12px; border-radius: 12px; font-size: 19px; line-height: 1.3; }
+  #velo { align-self: center; font-size: 13px; min-width: 74px; text-align: center; color: var(--texto); }
+  @media (orientation: landscape) {
+    #cartel { height: 56%; }
+    #titulo, #reloj { top: calc(56% + 8px); }
+    #recuerdo { top: calc(56% + 40px); font-size: 16px; padding: 6px 10px; }
+    #resolucion { display: none; }
+    #controles { flex-direction: row; justify-content: center; align-items: center; gap: 14px; padding-top: 6px; }
+    #controles .fila { flex-wrap: nowrap; }
+  }
   .escondido { display: none !important; }
 </style>
 </head>
@@ -92,7 +101,7 @@
   <div id="error"></div>
   <div id="controles">
     <div class="fila" id="ajustes">
-      <button data-a="lento">🐢</button><button data-a="rapido">🐇</button>
+      <button data-a="lento">🐢</button><button data-a="rapido">🐇</button><span id="velo"></span>
       <button data-a="chica">A−</button><button data-a="grande">A+</button>
       <button data-a="arriba">⤒</button><button data-a="encuadre">⛶</button>
     </div>
@@ -113,7 +122,7 @@ const guardado = (k, v) => { try { if (v === undefined) return JSON.parse(localS
 
 let guiones = guardado('tp_guiones') || [];
 let hechos = guardado('tp_hechos') || {};
-let pref = Object.assign({ velocidad: 38, letra: 30 }, guardado('tp_pref') || {});
+let pref = Object.assign({ ppm: 90, letra: 30 }, guardado('tp_pref') || {});
 let subida = guardado('tp_subida') || '', cola = [];
 let actual = -1, stream = null, grabador = null, partes = [], archivo = null, animacion = null, desplazado = 0, ultimo = 0, inicio = 0, wake = null;
 
@@ -194,7 +203,7 @@ async function abrir(i) {
   $('#titulo').textContent = g.num + ' · ' + g.nombre;
   $('#recuerdo').textContent = g.hace || '';
   $('#texto').textContent = g.texto;
-  aplicarLetra(); reiniciarTexto(); modo('listo');
+  aplicarLetra(); pintarVelocidad(); reiniciarTexto(); modo('listo');
   $('#grabar').classList.toggle('llenar', !!pref.llenar);
   await prenderCamara();
   try { wake = await navigator.wakeLock?.request('screen'); } catch (e) {}
@@ -211,8 +220,16 @@ function volverALista() {
 // ---------- El texto que sube ----------
 function aplicarLetra() { $('#texto').style.fontSize = pref.letra + 'px'; }
 function reiniciarTexto() { desplazado = 0; $('#texto').style.transform = 'translateY(0)'; }
+// La velocidad se mide en palabras por minuto: no depende de si el celu está parado o acostado ni del tamaño de letra
+function pxPorSegundo() {
+  const t = $('#texto');
+  const alto = t.scrollHeight - (parseFloat(getComputedStyle(t).paddingBottom) || 0);
+  const palabras = Math.max(1, ((guiones[actual] || {}).texto || '').split(/\s+/).filter(Boolean).length);
+  return pref.ppm / 60 * (alto / palabras);
+}
+function pintarVelocidad() { $('#velo').textContent = pref.ppm + ' pal/min'; }
 function correr(t) {
-  if (ultimo) desplazado += pref.velocidad * (t - ultimo) / 1000;
+  if (ultimo) desplazado += pxPorSegundo() * (t - ultimo) / 1000;
   ultimo = t;
   $('#texto').style.transform = `translateY(${-desplazado}px)`;
   const s = Math.floor((Date.now() - inicio) / 1000);
@@ -221,13 +238,13 @@ function correr(t) {
 }
 $('#ajustes').onclick = e => {
   const a = e.target.dataset.a; if (!a) return;
-  if (a === 'lento') pref.velocidad = Math.max(8, pref.velocidad - 6);
-  if (a === 'rapido') pref.velocidad = Math.min(160, pref.velocidad + 6);
+  if (a === 'lento') pref.ppm = Math.max(30, pref.ppm - 10);
+  if (a === 'rapido') pref.ppm = Math.min(220, pref.ppm + 10);
   if (a === 'chica') pref.letra = Math.max(18, pref.letra - 2);
   if (a === 'grande') pref.letra = Math.min(56, pref.letra + 2);
   if (a === 'arriba') reiniciarTexto();
   if (a === 'encuadre') { pref.llenar = !pref.llenar; $('#grabar').classList.toggle('llenar', pref.llenar); }
-  aplicarLetra(); guardado('tp_pref', pref);
+  aplicarLetra(); pintarVelocidad(); guardado('tp_pref', pref);
 };
 // Tocar el texto lo pausa o lo sigue (sin cortar la grabación)
 $('#cartel').onclick = () => {
