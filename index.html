@@ -392,13 +392,18 @@ async function cargarDelDia() {
     d.guiones.forEach((g, i) => { if (g.hecho) hechos[guiones[i].num + guiones[i].nombre] = true; });
     guardado('tp_guiones', guiones); guardado('tp_hechos', hechos);
     const faltan = guiones.filter(g => !hechos[g.num + g.nombre]).length;
-    $('#estadoDia').textContent = `Guiones de hoy, ${d.dia}: ${guiones.length} (te faltan ${faltan}). Se actualizan solos.`;
+    $('#estadoDia').textContent = `Guiones de hoy, ${d.dia}: ${guiones.length} (te faltan ${faltan}). Actualizado a las ${new Date().toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}.`;
     pintarLista();
   } catch (e) {
     $('#estadoDia').textContent = 'No pude traer los guiones de hoy (' + (e.message || e.name) + '). Tocá Actualizar o pegalos a mano.';
   }
 }
-$('#actualizar').onclick = cargarDelDia;
+// iPhone guarda la página unos minutos: Actualizar la vuelve a pedir entera, salvo que haya videos subiendo
+$('#actualizar').onclick = async () => {
+  $('#estadoDia').textContent = 'Actualizando…';
+  if (!cola.length) { location.replace(location.pathname + '?v=' + Date.now()); return; }
+  await cargarDelDia();
+};
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible' && $('#lista').classList.contains('activa')) cargarDelDia();
 });
