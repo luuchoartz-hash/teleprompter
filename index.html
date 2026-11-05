@@ -55,6 +55,7 @@
   #titulo { position: absolute; top: calc(46% + 10px); left: 14px; background: rgba(0,0,0,.55); padding: 4px 10px; border-radius: 999px; font-size: 14px; }
   #error { padding: 24px; text-align: center; color: var(--texto); position: absolute; inset: 30% 0 auto; display: none; }
   #subidas { position: absolute; top: 12px; left: 14px; background: rgba(0,0,0,.6); padding: 4px 10px; border-radius: 999px; font-size: 13px; }
+  #recuerdo { position: absolute; top: calc(46% + 46px); left: 14px; right: 14px; background: rgba(0,0,0,.7); padding: 10px 12px; border-radius: 12px; font-size: 19px; line-height: 1.3; }
   .escondido { display: none !important; }
 </style>
 </head>
@@ -84,6 +85,7 @@
   <video id="revision" playsinline controls class="escondido"></video>
   <div id="cartel"><div id="texto"></div></div>
   <div id="titulo"></div><div id="resolucion"></div>
+  <div id="recuerdo"></div>
   <div id="subidas" class="escondido"></div>
   <div id="reloj">0:00</div>
   <div id="cuenta"></div>
@@ -145,7 +147,7 @@ function pintarLista() {
     d.className = 'guion' + (hechos[g.num + g.nombre] ? ' hecho' : '');
     const n = document.createElement('div'); n.className = 'num'; n.textContent = g.num;
     const t = document.createElement('div'); t.className = 'nombre'; t.textContent = g.nombre;
-    const p = document.createElement('div'); p.className = 'palabras'; p.textContent = g.texto.split(/\s+/).length + ' palabras';
+    const p = document.createElement('div'); p.className = 'palabras'; p.textContent = g.hace || (g.texto.split(/\s+/).length + ' palabras');
     t.appendChild(document.createElement('br')); t.appendChild(p);
     const b = document.createElement('button'); b.className = 'principal'; b.textContent = 'Grabar';
     b.onclick = () => abrir(i);
@@ -190,6 +192,7 @@ async function abrir(i) {
   document.querySelectorAll('.vista').forEach(v => v.classList.remove('activa'));
   $('#grabar').classList.add('activa');
   $('#titulo').textContent = g.num + ' · ' + g.nombre;
+  $('#recuerdo').textContent = g.hace || '';
   $('#texto').textContent = g.texto;
   aplicarLetra(); reiniciarTexto(); modo('listo');
   $('#grabar').classList.toggle('llenar', !!pref.llenar);
@@ -248,6 +251,7 @@ function modo(m) {
   $('#revision').classList.toggle('escondido', m !== 'revision');
   $('#camara').classList.toggle('escondido', m === 'revision');
   $('#reloj').classList.toggle('on', m === 'grabando');
+  $('#recuerdo').classList.toggle('escondido', m !== 'listo' || !$('#recuerdo').textContent);
   $('#rec').textContent = m === 'grabando' ? '■ Parar' : '● Grabar';
   $('#volver').classList.toggle('escondido', m === 'grabando');
 }
@@ -384,7 +388,7 @@ async function cargarDelDia() {
     const d = JSON.parse(new TextDecoder().decode(plano));
     if (guardado('tp_fecha') !== d.fecha) { hechos = {}; guardado('tp_fecha', d.fecha); }
     subida = d.subida || ''; guardado('tp_subida', subida);
-    guiones = d.guiones.map(g => ({ num: g.num, id: g.id, nombre: g.nombre + (g.usuario ? ' (@' + g.usuario + ')' : ''), texto: g.texto }));
+    guiones = d.guiones.map(g => ({ num: g.num, id: g.id, hace: g.hace, nombre: g.nombre + (g.usuario ? ' (@' + g.usuario + ')' : ''), texto: g.texto }));
     d.guiones.forEach((g, i) => { if (g.hecho) hechos[guiones[i].num + guiones[i].nombre] = true; });
     guardado('tp_guiones', guiones); guardado('tp_hechos', hechos);
     const faltan = guiones.filter(g => !hechos[g.num + g.nombre]).length;
