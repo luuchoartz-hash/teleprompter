@@ -169,7 +169,7 @@ let cfg = LS.get('tp2_cfg');
 let items = LS.get('tp2_items') || [];
 let hechos = LS.get('tp2_hechos') || {};
 const esCelular = matchMedia('(pointer: coarse)').matches && Math.min(screen.width, screen.height) < 700;
-let pref = Object.assign({ ppm: 130, letra: esCelular ? 28 : 32, modo: 'todo', notas: false, facing: 'user', llenar: false, orient: esCelular ? 'vertical' : 'horizontal' }, LS.get('tp2_pref2') || {});
+let pref = Object.assign({ ppm: 130, letra: esCelular ? 28 : 32, modo: 'todo', notas: false, facing: 'user', llenar: false, orient: esCelular ? 'vertical' : 'horizontal' }, Object.assign({}, LS.get('tp2_pref2') || {}, { modo: 'todo' }));
 let actual = null;            // { item, guion }
 let stream = null, grabador = null, partes = [], animacion = null, desplazado = 0, ultimo = 0, inicio = 0, wake = null, contando = false;
 let relojId = null, medidaCamara = '', avisoCamara = '', largoArriba = false;
@@ -444,7 +444,7 @@ function grabador_activo() { return grabador && grabador.state === 'recording'; 
 function cargarGuionEnPantalla(txt) {
   actual.texto = txt; actual.guion = parseGuion(txt);
   const g = actual.guion;
-  if (!g.ganchos.length && pref.modo !== 'todo') pref.modo = 'todo';
+  pref.modo = 'todo';   // cada video arranca completo (ganchos + cuerpo); el modo no se recuerda
   $('#bModo').classList.toggle('escondido', !g.ganchos.length);
   pintarTexto(); armarInfo();
 }
@@ -496,7 +496,7 @@ function aplicarPref() {
   $('#texto').classList.toggle('conNotas', !!pref.notas);
   $('#grabar').classList.toggle('llenar', !!pref.llenar);
   $('#camara').classList.toggle('espejo', pref.facing === 'user');
-  LS.set('tp2_pref2', pref);
+  LS.set('tp2_pref2', Object.assign({}, pref, { modo: 'todo' }));
 }
 function reiniciarTexto() { desplazado = 0; $('#texto').style.transform = 'translateY(0)'; }
 function aplicarDesplazo() { $('#texto').style.transform = `translateY(${-desplazado}px)`; }
