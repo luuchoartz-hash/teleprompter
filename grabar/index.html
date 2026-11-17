@@ -112,6 +112,7 @@
   <p class="ayuda" id="estadoLista">Buscando tus videos en la planilla…</p>
   <div id="subidasLista" class="pildora escondido"></div>
   <div class="fila escondido" id="filaReintentar"><button class="principal" id="reintentar">Reintentar los que fallaron</button></div>
+  <div id="sinSubir" class="escondido" style="display:flex;flex-direction:column;gap:8px"></div>
   <div id="hero"></div>
   <h2 id="tituloResto" class="escondido">Después</h2>
   <div id="resto" style="display:flex;flex-direction:column;gap:8px"></div>
@@ -138,7 +139,7 @@
       <button data-a="notas" id="bNotas">Notas</button>
       <button data-a="info">ℹ</button>
       <button data-a="camara">🔄</button>
-      <button data-a="arriba">⤒</button>
+      <button data-a="arriba" title="Un poco atrás. Mantené apretado para ir al principio">↑</button>
       <button data-a="encuadre">⛶</button>
     </div>
     <div class="fila" id="acciones">
@@ -146,9 +147,8 @@
       <button class="rojo" id="rec">● Grabar</button>
     </div>
     <div class="fila escondido" id="despues">
-      <button id="otraVez">Otra toma</button>
-      <button id="descartar">Descartar</button>
-      <button class="principal" id="siguiente">Siguiente video</button>
+      <button id="descartar">Descartar toma</button>
+      <button class="principal" id="siguiente">Subir y seguir</button>
     </div>
   </div>
 </section>
@@ -170,7 +170,7 @@ const esCelular = matchMedia('(pointer: coarse)').matches && Math.min(screen.wid
 let pref = Object.assign({ ppm: 130, letra: esCelular ? 28 : 32, modo: 'todo', notas: false, facing: 'user', llenar: false }, LS.get('tp2_pref2') || {});
 let actual = null;            // { item, guion }
 let stream = null, grabador = null, partes = [], animacion = null, desplazado = 0, ultimo = 0, inicio = 0, wake = null, contando = false;
-let relojId = null, medidaCamara = '';
+let relojId = null, medidaCamara = '', largoArriba = false;
 let tomaActual = null;        // la subida de la toma que se está revisando
 
 // ======================================================================= conexión con el script
@@ -268,6 +268,7 @@ const palabrasHabladas = b => b.filter(x => x.t === 'p')
 const claveItem = it => it.fila + '|' + it.titulo;
 
 function pintarLista() {
+  pintarSinSubir();
   const pend = items.filter(it => !hechos[claveItem(it)]);
   const hero = $('#hero'); hero.innerHTML = '';
   const proximo = pend[0];
@@ -473,7 +474,7 @@ $('#ajustes').onclick = async e => {
   if (a === 'rapido') pref.ppm = Math.min(240, pref.ppm + 10);
   if (a === 'chica') pref.letra = Math.max(18, pref.letra - 2);
   if (a === 'grande') pref.letra = Math.min(64, pref.letra + 2);
-  if (a === 'arriba') { reiniciarTexto(); }
+  if (a === 'arriba') { if (largoArriba) { largoArriba = false; return; } desplazado = Math.max(0, desplazado - Math.max(100, pxPorSegundo() * 6)); aplicarDesplazo(); }
   if (a === 'encuadre') pref.llenar = !pref.llenar;
   if (a === 'notas') pref.notas = !pref.notas;
   if (a === 'info') $('#info').classList.toggle('escondido');
@@ -481,6 +482,12 @@ $('#ajustes').onclick = async e => {
   if (a === 'camara' && !grabador_activo()) { pref.facing = pref.facing === 'user' ? 'environment' : 'user'; apagarCamara(); await prenderCamara(); }
   aplicarPref();
 };
+// ↑ vuelve unos 6 segundos de lectura; mantenerlo apretado lleva al principio
+(function () {
+  const b = document.querySelector('[data-a=arriba]'); let t = null;
+  b.addEventListener('pointerdown', () => { clearTimeout(t); t = setTimeout(() => { largoArriba = true; reiniciarTexto(); }, 700); });
+  ['pointerup', 'pointerleave', 'pointercancel'].forEach(e => b.addEventListener(e, () => clearTimeout(t)));
+})();
 // Tocar el texto lo pausa/sigue mientras se graba; arrastrarlo lo mueve
 (function () {
   const c = $('#cartel'); let y0 = null, d0 = 0, arrastro = false;
@@ -570,8 +577,8 @@ function terminado(g) {
   const blob = new Blob(partes, { type: tipo }); partes = [];
   if (blob.size < 2000) { alert('No se grabó nada. Probá de nuevo.'); modo('listo'); return; }
   const it = actual.item, k = claveItem(it);
-  const h = hechos[k] || { n: 0 }; h.n += 1; hechos[k] = h; LS.set('tp2_hechos', hechos);
-  const u = encolar({ nombre: nombreDeArchivo(it, h.n, tipo.includes('mp4') ? 'mp4' : 'webm'), tipo, blob, titulo: it.titulo });
+  const n = ((hechos[k] || {}).n || 0) + 1;
+  const u = encolar({ nombre: nombreDeArchivo(it, n, tipo.includes('mp4') ? 'mp4' : 'webm'), tipo, blob, titulo: it.titulo, clave: k, estado: 'revision' });
   tomaActual = u;
   const v = $('#revision'); if (v.dataset.url) URL.revokeObjectURL(v.dataset.url);
   v.dataset.url = URL.createObjectURL(blob); v.src = v.dataset.url;
@@ -579,16 +586,13 @@ function terminado(g) {
 }
 
 function liberarRevision() { const v = $('#revision'); v.pause(); if (v.dataset.url) { URL.revokeObjectURL(v.dataset.url); delete v.dataset.url; } v.removeAttribute('src'); try { v.load(); } catch (e) {} }
-$('#otraVez').onclick = () => { liberarRevision(); tomaActual = null; modo('listo'); reiniciarTexto(); };
-$('#descartar').onclick = async () => {
-  if (!tomaActual) return;
-  if (!confirm('¿Descartar esta toma? Se cancela la subida o se manda a la papelera de Drive si ya subió.')) return;
-  const u = tomaActual; tomaActual = null;
+$('#descartar').onclick = () => {          // la toma se borra de este dispositivo; no se sube nada
+  const u = tomaActual;
   liberarRevision(); modo('listo'); reiniciarTexto();
-  await descartarSubida(u);
-  const k = claveItem(actual.item), h = hechos[k]; if (h) { h.n = Math.max(0, h.n - 1); if (!h.n) delete hechos[k]; LS.set('tp2_hechos', hechos); }
+  if (u) descartarToma(u);
 };
 $('#siguiente').onclick = () => {
+  if (tomaActual) confirmarSubida(tomaActual);
   liberarRevision();
   const sig = items.find(it => !hechos[claveItem(it)]);
   if (sig) abrir(sig); else volverALista();
@@ -598,7 +602,7 @@ function volverALista() {
   liberarRevision(); apagarCamara();
   try { wake && wake.release && wake.release(); } catch (e) {}
   actual = null; tomaActual = null;
-  vista('#lista'); pintarLista(); cargarLista(true);
+  vista('#lista'); pintarLista(); pintarSinSubir(); cargarLista(true);
 }
 $('#volver').onclick = volverALista;
 document.addEventListener('visibilitychange', async () => {
@@ -652,13 +656,38 @@ const IDB = (() => {
   };
 })();
 
-const metaDe = u => ({ id: u.id, nombre: u.nombre, tipo: u.tipo, tam: u.tam, sesion: u.sesion || null, subido: u.subido || 0, estado: u.estado, archivoId: u.archivoId || null, link: u.link || null, titulo: u.titulo });
+const metaDe = u => ({ clave: u.clave || null, id: u.id, nombre: u.nombre, tipo: u.tipo, tam: u.tam, sesion: u.sesion || null, subido: u.subido || 0, estado: u.estado, archivoId: u.archivoId || null, link: u.link || null, titulo: u.titulo });
 
-function encolar({ nombre, tipo, blob, titulo }) {
-  const u = { id: 'u' + Math.random().toString(36).slice(2, 10) + cola.length, nombre, tipo, blob, tam: blob.size, titulo, subido: 0, pct: 0, estado: 'espera', sesion: null };
+function encolar({ nombre, tipo, blob, titulo, clave, estado = 'espera' }) {
+  const u = { id: 'u' + Math.random().toString(36).slice(2, 10) + cola.length, nombre, tipo, blob, tam: blob.size, titulo, clave, subido: 0, pct: 0, estado, sesion: null };
   cola.push(u); IDB.guardar(metaDe(u), blob);
-  procesarCola();
+  if (estado === 'espera') procesarCola();
   return u;
+}
+// Confirmar = recién ahí empieza a subir. Descartar nunca toca Drive.
+function confirmarSubida(u) {
+  if (u.estado !== 'revision') return;
+  u.estado = 'espera';
+  if (u.clave) { const h = hechos[u.clave] || { n: 0 }; h.n += 1; hechos[u.clave] = h; LS.set('tp2_hechos', hechos); }
+  IDB.meta(metaDe(u)); procesarCola(); pintarSubidas();
+}
+function descartarToma(u) {
+  cola = cola.filter(x => x !== u); IDB.quitar(u.id);
+  if (tomaActual === u) tomaActual = null;
+  pintarSinSubir();
+}
+function pintarSinSubir() {
+  const c = $('#sinSubir'); c.innerHTML = '';
+  const l = cola.filter(u => u.estado === 'revision' && u !== tomaActual);
+  c.classList.toggle('escondido', !l.length);
+  l.forEach(u => {
+    const d = document.createElement('div'); d.className = 'item';
+    const n = document.createElement('div'); n.className = 'nombre'; n.textContent = u.titulo;
+    const sm = document.createElement('small'); sm.textContent = 'Toma grabada que todavía NO se subió'; n.appendChild(sm);
+    const bs = document.createElement('button'); bs.className = 'principal'; bs.textContent = 'Subir'; bs.onclick = () => { confirmarSubida(u); pintarSinSubir(); };
+    const bd = document.createElement('button'); bd.textContent = 'Descartar'; bd.onclick = () => descartarToma(u);
+    d.append(n, bs, bd); c.appendChild(d);
+  });
 }
 
 function putDirecto(u, parte, desde, total) {
@@ -780,6 +809,7 @@ async function descartarSubida(u) {
 }
 
 function textoSubida(u) {
+  if (u.estado === 'revision') return { t: 'Esta toma todavía NO se subió. Mirala y elegí.', c: '', pct: 0 };
   if (u.estado === 'listo') return { t: '✓ Subido a tu Drive', c: 'bien', pct: 100 };
   if (u.estado === 'fallo') return { t: '⚠ No pude subirlo (' + (u.error || 'error') + '). Queda guardado en este dispositivo.', c: 'mal', pct: u.pct };
   if (u.estado === 'espera') return { t: 'En cola para subir…', c: '', pct: 0 };
@@ -787,7 +817,7 @@ function textoSubida(u) {
 }
 
 function pintarSubidas() {
-  const vivas = cola.filter(u => u.estado !== 'listo');
+  const vivas = cola.filter(u => u.estado !== 'listo' && u.estado !== 'revision');
   const malas = vivas.filter(u => u.estado === 'fallo');
   const activas = vivas.filter(u => u.estado !== 'fallo');
   // pastilla de la lista
@@ -812,16 +842,16 @@ function pintarSubidas() {
 function reintentar() { cola.forEach(u => { if (u.estado === 'fallo') { u.estado = 'espera'; u.error = null; } }); pintarSubidas(); procesarCola(); }
 $('#reintentar').onclick = reintentar;
 window.addEventListener('online', reintentar);
-window.addEventListener('beforeunload', e => { if (grabador_activo() || cola.some(u => u.estado === 'subiendo' || u.estado === 'espera')) { e.preventDefault(); e.returnValue = ''; } });
+window.addEventListener('beforeunload', e => { if (grabador_activo() || cola.some(u => u.estado === 'subiendo' || u.estado === 'espera' || u.estado === 'revision')) { e.preventDefault(); e.returnValue = ''; } });
 
 // Videos que quedaron sin subir la última vez (se cortó internet, se cerró la pestaña…)
 async function retomarPendientes() {
   const metas = (await IDB.metas()) || [];
   for (const m of metas) {
     if (cola.some(u => u.id === m.id)) continue;
-    cola.push(Object.assign({}, m, { estado: 'espera', pct: m.tam ? Math.round(m.subido * 100 / m.tam) : 0, blob: null }));
+    cola.push(Object.assign({}, m, { estado: m.estado === 'revision' ? 'revision' : 'espera', pct: m.tam ? Math.round(m.subido * 100 / m.tam) : 0, blob: null }));
   }
-  if (metas.length) { pintarSubidas(); procesarCola(); }
+  if (metas.length) { pintarSubidas(); pintarSinSubir(); procesarCola(); }
 }
 
 // ======================================================================= conexión inicial
