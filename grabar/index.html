@@ -167,10 +167,10 @@ let cfg = LS.get('tp2_cfg');
 let items = LS.get('tp2_items') || [];
 let hechos = LS.get('tp2_hechos') || {};
 const esCelular = matchMedia('(pointer: coarse)').matches && Math.min(screen.width, screen.height) < 700;
-let pref = Object.assign({ ppm: 130, letra: esCelular ? 28 : 32, modo: 'todo', notas: false, facing: 'user', llenar: esCelular }, LS.get('tp2_pref') || {});
+let pref = Object.assign({ ppm: 130, letra: esCelular ? 28 : 32, modo: 'todo', notas: false, facing: 'user', llenar: false }, LS.get('tp2_pref2') || {});
 let actual = null;            // { item, guion }
 let stream = null, grabador = null, partes = [], animacion = null, desplazado = 0, ultimo = 0, inicio = 0, wake = null, contando = false;
-let relojId = null;
+let relojId = null, medidaCamara = '';
 let tomaActual = null;        // la subida de la toma que se está revisando
 
 // ======================================================================= conexión con el script
@@ -358,6 +358,7 @@ async function prenderCamara() {
     });
     try { await screen.orientation.lock('portrait'); } catch (e) {}   // iPhone no lo permite: ahí avisa el cartel de abajo
     const v = $('#camara'); v.srcObject = stream; v.classList.toggle('espejo', pref.facing === 'user');
+    v.onloadedmetadata = () => { medidaCamara = v.videoWidth + '×' + v.videoHeight; if (actual && actual.guion) pintarTexto(); };
     $('#error').style.display = 'none';
     return true;
   } catch (e) {
@@ -424,7 +425,7 @@ function pintarTexto() {
   });
   t.classList.toggle('conNotas', !!pref.notas);
   const pal = palabrasHabladas(bloques), seg = Math.round(pal / pref.ppm * 60);
-  $('#duracion').textContent = pal ? `${pal} palabras · ≈ ${Math.floor(seg / 60)}:${String(seg % 60).padStart(2, '0')}` : '';
+  $('#duracion').textContent = (pal ? `${pal} palabras · ≈ ${Math.floor(seg / 60)}:${String(seg % 60).padStart(2, '0')}` : '') + (medidaCamara ? ` · cámara ${medidaCamara}` : '');
   reiniciarTexto();
 }
 
@@ -449,7 +450,7 @@ function aplicarPref() {
   $('#texto').classList.toggle('conNotas', !!pref.notas);
   $('#grabar').classList.toggle('llenar', !!pref.llenar);
   $('#camara').classList.toggle('espejo', pref.facing === 'user');
-  LS.set('tp2_pref', pref);
+  LS.set('tp2_pref2', pref);
 }
 function reiniciarTexto() { desplazado = 0; $('#texto').style.transform = 'translateY(0)'; }
 function aplicarDesplazo() { $('#texto').style.transform = `translateY(${-desplazado}px)`; }
@@ -852,7 +853,6 @@ function iniciar() {
   if (!cfg) { vista('#config'); return; }
   vista('#lista'); pintarLista(); cargarLista(false); retomarPendientes();
 }
-if (esCelular) document.querySelector('[data-a=encuadre]').classList.add('escondido');
 window.__tp = { parseGuion, armarBloques, palabrasHabladas };   // para las pruebas
 leerHash();
 iniciar();
