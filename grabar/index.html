@@ -80,6 +80,7 @@
   #info { position: absolute; inset: 0; background: rgba(0,0,0,.92); padding: max(16px, env(safe-area-inset-top)) 18px 90px; overflow-y: auto; z-index: 5; }
   #info h3 { margin: 16px 0 4px; font-size: 12px; color: var(--suave); text-transform: uppercase; letter-spacing: .06em; }
   #info p { margin: 0; white-space: pre-wrap; line-height: 1.4; }
+  #grabar.horizontal #girar { display: none !important; }
   #girar { display: none; position: absolute; inset: 0; z-index: 8; background: rgba(0,0,0,.88); align-items: center; justify-content: center; text-align: center; font-size: 26px; font-weight: 700; line-height: 1.5; pointer-events: none; }
   #girar small { font-size: 14px; font-weight: 400; color: var(--suave); }
   @media (orientation: landscape) and (pointer: coarse) and (max-height: 500px) { #girar { display: flex; } }
@@ -135,6 +136,7 @@
     <div class="fila" id="ajustes">
       <button data-a="lento">🐢</button><span id="velo"></span><button data-a="rapido">🐇</button>
       <button data-a="chica">A−</button><button data-a="grande">A+</button>
+      <button data-a="orient" id="bOrient">Vertical</button>
       <button data-a="modo" id="bModo">Todo</button>
       <button data-a="notas" id="bNotas">Notas</button>
       <button data-a="info">ℹ</button>
@@ -167,10 +169,10 @@ let cfg = LS.get('tp2_cfg');
 let items = LS.get('tp2_items') || [];
 let hechos = LS.get('tp2_hechos') || {};
 const esCelular = matchMedia('(pointer: coarse)').matches && Math.min(screen.width, screen.height) < 700;
-let pref = Object.assign({ ppm: 130, letra: esCelular ? 28 : 32, modo: 'todo', notas: false, facing: 'user', llenar: false }, LS.get('tp2_pref2') || {});
+let pref = Object.assign({ ppm: 130, letra: esCelular ? 28 : 32, modo: 'todo', notas: false, facing: 'user', llenar: false, orient: esCelular ? 'vertical' : 'horizontal' }, LS.get('tp2_pref2') || {});
 let actual = null;            // { item, guion }
 let stream = null, grabador = null, partes = [], animacion = null, desplazado = 0, ultimo = 0, inicio = 0, wake = null, contando = false;
-let relojId = null, medidaCamara = '', largoArriba = false;
+let relojId = null, medidaCamara = '', avisoCamara = '', largoArriba = false;
 let tomaActual = null;        // la subida de la toma que se está revisando
 
 // ======================================================================= conexión con el script
@@ -348,25 +350,66 @@ function vista(id) {
   $(id).classList.add('activa');
 }
 
-async function prenderCamara() {
-  if (stream && stream.getTracks().every(t => t.readyState === 'live')) return true;
+function restriccionesCamara() {
+  const f = { facingMode: pref.facing };
+  if (pref.orient === 'horizontal') return [{ ...f, width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 30 } }];
+  // vertical: iPhone y Android a veces entregan la cámara horizontal según cómo se la pida; se prueba hasta que llegue vertical
+  return [
+    { ...f, width: { ideal: 1080 }, height: { ideal: 1920 }, frameRate: { ideal: 30 } },
+    { ...f, aspectRatio: { ideal: 9 / 16 }, frameRate: { ideal: 30 } },
+    { ...f, width: { exact: 720 }, height: { exact: 1280 } },
+    { ...f, width: { ideal: 1080 }, height: { ideal: 1440 } },
+    { ...f, width: { ideal: 1280 }, height: { ideal: 720 } },
+    { ...f }
+  ];
+}
+async function medirStream(s) {
+  const v = document.createElement('video'); v.muted = true; v.playsInline = true; v.srcObject = s;
+  await new Promise(r => { v.onloadedmetadata = r; setTimeout(r, 2000); });
+  try { await v.play(); } catch (e) {}
+  let w = v.videoWidth, h = v.videoHeight;
+  if (!w || !h) { const st = s.getVideoTracks()[0].getSettings(); w = st.width || 0; h = st.height || 0; }
+  v.srcObject = null; return { w, h };
+}
+let camaraEnCurso = null;
+function prenderCamara() {
+  if (stream && stream.getTracks().every(t => t.readyState === 'live')) return Promise.resolve(true);
+  if (!camaraEnCurso) camaraEnCurso = abrirCamara().finally(() => { camaraEnCurso = null; });
+  return camaraEnCurso;
+}
+async function abrirCamara() {
+  const audio = { echoCancellation: true, noiseSuppression: true };
+  const lista = restriccionesCamara(), quiereVertical = pref.orient === 'vertical';
+  let elegido = null, respaldo = null;
   try {
-    const medida = esCelular ? { width: { ideal: 1080 }, height: { ideal: 1920 }, aspectRatio: { ideal: 9 / 16 } }   // vertical, para reels
-                             : { width: { ideal: 1920 }, height: { ideal: 1080 } };
-    stream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: pref.facing, ...medida, frameRate: { ideal: 30 } },
-      audio: { echoCancellation: true, noiseSuppression: true }
-    });
-    try { await screen.orientation.lock('portrait'); } catch (e) {}   // iPhone no lo permite: ahí avisa el cartel de abajo
-    const v = $('#camara'); v.srcObject = stream; v.classList.toggle('espejo', pref.facing === 'user');
-    v.onloadedmetadata = () => { medidaCamara = v.videoWidth + '×' + v.videoHeight; if (actual && actual.guion) pintarTexto(); };
-    $('#error').style.display = 'none';
-    return true;
+    for (let k = 0; k < lista.length; k++) {
+      let s;
+      try { s = await navigator.mediaDevices.getUserMedia({ video: lista[k], audio }); }
+      catch (e) { if (e.name === 'NotAllowedError' || e.name === 'SecurityError' || e.name === 'NotFoundError') throw e; continue; }   // esa forma de pedirla no existe: sigo
+      const d = await medirStream(s);
+      if (!quiereVertical || d.h > d.w) { elegido = { s, d, k }; break; }
+      if (!respaldo) respaldo = { d, k };
+      s.getTracks().forEach(t => t.stop());
+    }
+    if (!elegido && respaldo) {                      // ninguna forma dio vertical: me quedo con la primera que anduvo
+      const s = await navigator.mediaDevices.getUserMedia({ video: lista[respaldo.k], audio });
+      elegido = { s, d: respaldo.d, k: respaldo.k };
+    }
+    if (!elegido) throw new Error('sin cámara');
   } catch (e) {
     $('#error').style.display = 'block';
     $('#error').textContent = 'No pude usar la cámara (' + (e.name || e) + '). Dale permiso de Cámara y Micrófono a esta página y volvé a abrirla.';
     return false;
   }
+  stream = elegido.s;
+  try { await screen.orientation.lock(quiereVertical ? 'portrait' : 'landscape'); } catch (e) {}
+  const v = $('#camara'); v.srcObject = stream; v.classList.toggle('espejo', pref.facing === 'user');
+  const vertical = elegido.d.h > elegido.d.w;
+  medidaCamara = `${elegido.d.w}×${elegido.d.h} ${vertical ? 'vertical' : 'horizontal'}`;
+  avisoCamara = quiereVertical && !vertical ? ' · ⚠ el celular entregó la cámara horizontal' : '';
+  $('#error').style.display = 'none';
+  if (actual && actual.guion) pintarTexto();
+  return true;
 }
 function apagarCamara() {
   if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
@@ -426,7 +469,7 @@ function pintarTexto() {
   });
   t.classList.toggle('conNotas', !!pref.notas);
   const pal = palabrasHabladas(bloques), seg = Math.round(pal / pref.ppm * 60);
-  $('#duracion').textContent = (pal ? `${pal} palabras · ≈ ${Math.floor(seg / 60)}:${String(seg % 60).padStart(2, '0')}` : '') + (medidaCamara ? ` · cámara ${medidaCamara}` : '');
+  $('#duracion').textContent = (pal ? `${pal} palabras · ≈ ${Math.floor(seg / 60)}:${String(seg % 60).padStart(2, '0')}` : '') + (medidaCamara ? ` · cámara ${medidaCamara}` : '') + avisoCamara;
   reiniciarTexto();
 }
 
@@ -448,6 +491,8 @@ function aplicarPref() {
   $('#velo').textContent = pref.ppm + ' pal/min';
   $('#bModo').textContent = { todo: 'Todo', ganchos: 'Ganchos', cuerpo: 'Cuerpo' }[pref.modo];
   $('#bNotas').classList.toggle('activo', !!pref.notas);
+  $('#bOrient').textContent = pref.orient === 'vertical' ? '📱 Vertical' : '🖥 Horizontal';
+  $('#grabar').classList.toggle('horizontal', pref.orient === 'horizontal');
   $('#texto').classList.toggle('conNotas', !!pref.notas);
   $('#grabar').classList.toggle('llenar', !!pref.llenar);
   $('#camara').classList.toggle('espejo', pref.facing === 'user');
@@ -479,6 +524,7 @@ $('#ajustes').onclick = async e => {
   if (a === 'notas') pref.notas = !pref.notas;
   if (a === 'info') $('#info').classList.toggle('escondido');
   if (a === 'modo' && actual && actual.guion && actual.guion.ganchos.length && !grabador_activo()) { pref.modo = { todo: 'ganchos', ganchos: 'cuerpo', cuerpo: 'todo' }[pref.modo]; pintarTexto(); }
+  if (a === 'orient' && !grabador_activo()) { pref.orient = pref.orient === 'vertical' ? 'horizontal' : 'vertical'; apagarCamara(); aplicarPref(); await prenderCamara(); }
   if (a === 'camara' && !grabador_activo()) { pref.facing = pref.facing === 'user' ? 'environment' : 'user'; apagarCamara(); await prenderCamara(); }
   aplicarPref();
 };
@@ -883,6 +929,7 @@ function iniciar() {
   if (!cfg) { vista('#config'); return; }
   vista('#lista'); pintarLista(); cargarLista(false); retomarPendientes();
 }
+if (esCelular) document.querySelector('[data-a=encuadre]').classList.add('escondido');
 window.__tp = { parseGuion, armarBloques, palabrasHabladas };   // para las pruebas
 leerHash();
 iniciar();
