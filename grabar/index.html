@@ -1,0 +1,861 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#000000">
+<meta name="robots" content="noindex, nofollow">
+<title>Teleprompter · Grabar</title>
+<style>
+  :root { --fondo: #0b0b0f; --panel: #17171f; --texto: #f4f4f6; --suave: #9a9aa8; --acento: #4f46e5; --rojo: #e5484d; --verde: #30a46c; --ambar: #f5a524; }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; height: 100%; overscroll-behavior: none; background: var(--fondo); color: var(--texto);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+  button { font: inherit; color: inherit; border: 0; border-radius: 12px; padding: 12px 16px; background: var(--panel); cursor: pointer; }
+  button:disabled { opacity: .5; }
+  button.principal { background: var(--acento); font-weight: 600; }
+  button.rojo { background: var(--rojo); font-weight: 600; }
+  input { font: inherit; width: 100%; padding: 12px; border-radius: 12px; border: 1px solid #2a2a36; background: var(--panel); color: var(--texto); }
+  a { color: #8ea2ff; }
+  .vista { display: none; height: 100%; }
+  .vista.activa { display: flex; flex-direction: column; }
+  .escondido { display: none !important; }
+  .fila { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .ayuda { color: var(--suave); font-size: 14px; line-height: 1.4; margin: 0; }
+  h1 { font-size: 22px; margin: 4px 0 0; }
+  h2 { font-size: 13px; margin: 14px 0 0; color: var(--suave); text-transform: uppercase; letter-spacing: .06em; font-weight: 600; }
+
+  /* Config y lista */
+  #config, #lista { padding: max(16px, env(safe-area-inset-top)) 16px max(24px, env(safe-area-inset-bottom)); overflow-y: auto; gap: 12px; max-width: 720px; width: 100%; margin: 0 auto; }
+  .tarjeta { background: var(--panel); border-radius: 16px; padding: 16px; display: flex; flex-direction: column; gap: 10px; }
+  .tarjeta.proximo { border: 1px solid var(--acento); }
+  .tarjeta .titulo { font-size: 24px; font-weight: 700; line-height: 1.2; }
+  .chips { display: flex; gap: 6px; flex-wrap: wrap; }
+  .chip { background: #23232e; color: var(--suave); border-radius: 999px; padding: 3px 10px; font-size: 12px; }
+  .item { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-radius: 12px; background: var(--panel); }
+  .item .num { color: var(--suave); font-size: 13px; min-width: 22px; text-align: center; }
+  .item .nombre { flex: 1; font-size: 16px; line-height: 1.25; }
+  .item .nombre small { display: block; color: var(--suave); font-size: 12px; margin-top: 2px; }
+  .item.hecho { opacity: .55; }
+  .item.hecho .num::after { content: "✓"; color: var(--verde); }
+  .pildora { padding: 8px 12px; border-radius: 12px; font-size: 14px; background: var(--panel); }
+  .pildora.mal { background: #3a1d20; color: #ffb4b8; }
+  .pildora.bien { background: #14301f; color: #9be6bb; }
+  .barra { height: 6px; background: #2a2a36; border-radius: 3px; overflow: hidden; margin-top: 6px; }
+  .barra > i { display: block; height: 100%; width: 0; background: var(--acento); transition: width .2s; }
+
+  /* Grabar */
+  #grabar { position: fixed; inset: 0; background: #000; touch-action: none; overscroll-behavior: none; }
+  video#camara, video#revision { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; background: #000; }
+  #grabar.llenar video#camara { object-fit: cover; }
+  video#camara.espejo { transform: scaleX(-1); }
+  #cartel { position: absolute; left: 0; right: 0; top: 0; height: 46%; overflow: hidden; touch-action: none;
+    background: linear-gradient(rgba(0,0,0,.74), rgba(0,0,0,.58) 85%, rgba(0,0,0,0)); padding-top: max(10px, env(safe-area-inset-top)); }
+  #texto { max-width: 680px; margin: 0 auto; padding: 0 22px 60vh; font-weight: 600; line-height: 1.38; text-shadow: 0 1px 3px #000; will-change: transform; }
+  #texto p { margin: 0 0 .7em; white-space: pre-wrap; }
+  #texto .et { font-size: .5em; letter-spacing: .12em; text-transform: uppercase; color: #aab4ff; margin: 1.4em 0 .5em; font-weight: 700; }
+  #texto .et:first-child { margin-top: .2em; }
+  #texto .nota { display: none; color: #8ab4ff; font-style: italic; font-weight: 500; font-size: .72em; }
+  #texto.conNotas .nota { display: inline; }
+  #texto .vacio { color: var(--suave); font-weight: 500; font-size: .7em; }
+  #controles { position: absolute; left: 0; right: 0; bottom: 0; padding: 12px 12px max(14px, env(safe-area-inset-bottom));
+    display: flex; flex-direction: column; gap: 8px; background: linear-gradient(rgba(0,0,0,0), rgba(0,0,0,.75)); }
+  #controles .fila { justify-content: center; }
+  #controles button { min-width: 48px; background: rgba(40,40,52,.88); padding: 10px 12px; }
+  #controles button.rojo { background: var(--rojo); }
+  #controles button.principal { background: var(--acento); }
+  #controles button.activo { outline: 2px solid var(--acento); }
+  .flota { position: absolute; background: rgba(0,0,0,.6); padding: 4px 10px; border-radius: 999px; font-size: 13px; }
+  #titulo { top: calc(46% + 10px); left: 14px; max-width: 60%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 14px; }
+  #reloj { top: calc(46% + 10px); right: 14px; font-variant-numeric: tabular-nums; font-size: 14px; display: none; }
+  #reloj.on { display: block; }
+  #reloj.on::before { content: "● "; color: var(--rojo); }
+  #duracion { top: calc(46% + 44px); left: 14px; font-size: 12px; color: var(--suave); }
+  #subidas { top: 12px; left: 14px; right: 14px; border-radius: 12px; }
+  #cuenta { position: absolute; inset: 0; display: none; align-items: center; justify-content: center; font-size: 120px; font-weight: 800; text-shadow: 0 2px 12px #000; pointer-events: none; }
+  #error { padding: 24px; text-align: center; position: absolute; inset: 30% 0 auto; display: none; }
+  #velo { font-size: 13px; min-width: 74px; text-align: center; }
+  #revisionInfo { position: absolute; left: 12px; right: 12px; top: max(12px, env(safe-area-inset-top)); display: flex; flex-direction: column; gap: 8px; }
+  #info { position: absolute; inset: 0; background: rgba(0,0,0,.92); padding: max(16px, env(safe-area-inset-top)) 18px 90px; overflow-y: auto; z-index: 5; }
+  #info h3 { margin: 16px 0 4px; font-size: 12px; color: var(--suave); text-transform: uppercase; letter-spacing: .06em; }
+  #info p { margin: 0; white-space: pre-wrap; line-height: 1.4; }
+  #girar { display: none; position: absolute; inset: 0; z-index: 8; background: rgba(0,0,0,.88); align-items: center; justify-content: center; text-align: center; font-size: 26px; font-weight: 700; line-height: 1.5; pointer-events: none; }
+  #girar small { font-size: 14px; font-weight: 400; color: var(--suave); }
+  @media (orientation: landscape) and (pointer: coarse) and (max-height: 500px) { #girar { display: flex; } }
+  @media (orientation: landscape) {
+    #cartel { height: 56%; }
+    #titulo, #reloj { top: calc(56% + 8px); }
+    #duracion { display: none; }
+    #controles { flex-direction: row; justify-content: center; align-items: center; flex-wrap: wrap; gap: 8px 14px; padding-top: 6px; }
+    #controles .fila { flex-wrap: nowrap; }
+  }
+</style>
+</head>
+<body>
+
+<section id="config" class="vista">
+  <h1>Teleprompter · Grabar</h1>
+  <p class="ayuda">Falta conectar esta página con tu Google. Abrí el link completo que te pasó Claude (trae todo) o pegá acá los dos datos.</p>
+  <div class="tarjeta">
+    <label class="ayuda">Dirección del script (termina en /exec)</label>
+    <input id="cfgS" placeholder="https://script.google.com/macros/s/…/exec" autocapitalize="off" autocorrect="off">
+    <label class="ayuda">Clave</label>
+    <input id="cfgK" placeholder="clave" autocapitalize="off" autocorrect="off">
+    <button class="principal" id="cfgGuardar">Conectar</button>
+    <p class="ayuda" id="cfgMsg"></p>
+  </div>
+</section>
+
+<section id="lista" class="vista activa">
+  <div class="fila" style="justify-content:space-between"><h1>Tu próximo video</h1><span class="fila"><button id="actualizar">↻ Actualizar</button><button id="ajustesBtn" title="Desconectar">⚙</button></span></div>
+  <p class="ayuda" id="estadoLista">Buscando tus videos en la planilla…</p>
+  <div id="subidasLista" class="pildora escondido"></div>
+  <div class="fila escondido" id="filaReintentar"><button class="principal" id="reintentar">Reintentar los que fallaron</button></div>
+  <div id="hero"></div>
+  <h2 id="tituloResto" class="escondido">Después</h2>
+  <div id="resto" style="display:flex;flex-direction:column;gap:8px"></div>
+</section>
+
+<section id="grabar" class="vista">
+  <video id="camara" playsinline autoplay muted></video>
+  <video id="revision" playsinline controls class="escondido"></video>
+  <div id="cartel"><div id="texto"></div></div>
+  <div class="flota" id="titulo"></div>
+  <div class="flota" id="reloj">0:00</div>
+  <div class="flota" id="duracion"></div>
+  <div id="subidas" class="flota pildora escondido"></div>
+  <div id="revisionInfo" class="escondido"></div>
+  <div id="cuenta"></div>
+  <div id="girar">📱<br>Poné el celular vertical<br><small>Los reels se graban parados</small></div>
+  <div id="error"></div>
+  <div id="info" class="escondido"></div>
+  <div id="controles">
+    <div class="fila" id="ajustes">
+      <button data-a="lento">🐢</button><span id="velo"></span><button data-a="rapido">🐇</button>
+      <button data-a="chica">A−</button><button data-a="grande">A+</button>
+      <button data-a="modo" id="bModo">Todo</button>
+      <button data-a="notas" id="bNotas">Notas</button>
+      <button data-a="info">ℹ</button>
+      <button data-a="camara">🔄</button>
+      <button data-a="arriba">⤒</button>
+      <button data-a="encuadre">⛶</button>
+    </div>
+    <div class="fila" id="acciones">
+      <button id="volver">Lista</button>
+      <button class="rojo" id="rec">● Grabar</button>
+    </div>
+    <div class="fila escondido" id="despues">
+      <button id="otraVez">Otra toma</button>
+      <button id="descartar">Descartar</button>
+      <button class="principal" id="siguiente">Siguiente video</button>
+    </div>
+  </div>
+</section>
+
+<script>
+const $ = s => document.querySelector(s);
+const LS = {
+  get(k, d = null) { try { const v = localStorage.getItem(k); return v === null ? d : JSON.parse(v); } catch (e) { return d; } },
+  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} },
+  del(k) { try { localStorage.removeItem(k); } catch (e) {} }
+};
+const esperar = ms => new Promise(r => setTimeout(r, ms));
+const sinTildes = s => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
+
+let cfg = LS.get('tp2_cfg');
+let items = LS.get('tp2_items') || [];
+let hechos = LS.get('tp2_hechos') || {};
+const esCelular = matchMedia('(pointer: coarse)').matches && Math.min(screen.width, screen.height) < 700;
+let pref = Object.assign({ ppm: 130, letra: esCelular ? 28 : 32, modo: 'todo', notas: false, facing: 'user', llenar: esCelular }, LS.get('tp2_pref') || {});
+let actual = null;            // { item, guion }
+let stream = null, grabador = null, partes = [], animacion = null, desplazado = 0, ultimo = 0, inicio = 0, wake = null, contando = false;
+let relojId = null;
+let tomaActual = null;        // la subida de la toma que se está revisando
+
+// ======================================================================= conexión con el script
+function normalizarScript(s) {
+  s = String(s || '').trim();
+  if (!s) return '';
+  if (/^https?:\/\//i.test(s)) s = s.replace(/[?#].*$/, '');
+  else if (/^[\w-]{20,}$/.test(s)) s = 'https://script.google.com/macros/s/' + s + '/exec';
+  return /^https:\/\/script\.google\.com\/(?:a\/[\w.-]+\/)?macros\/s\/[\w-]+\/exec$/.test(s) || /^http:\/\/localhost:\d+\/?$/.test(s) ? s : '';
+}
+
+async function llamar(accion, datos, post) {
+  if (!cfg) throw new Error('sin conexión configurada');
+  const ctl = new AbortController(), t = setTimeout(() => ctl.abort(), 120000);
+  try {
+    const r = post
+      ? await fetch(cfg.s, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+          body: JSON.stringify({ k: cfg.k, accion, ...datos }), signal: ctl.signal, redirect: 'follow' })
+      : await fetch(cfg.s + '?' + new URLSearchParams({ k: cfg.k, accion, ...datos }), { signal: ctl.signal, redirect: 'follow' });
+    let j;
+    try { j = await r.json(); } catch (x) { throw new Error('el script devolvió una página en vez de datos (¿está publicado para "Cualquier persona"?)'); }
+    if (!j.ok) { const e = new Error(j.error || 'error'); e.codigo = j.codigo; e.detalle = j.detalle; throw e; }
+    return j;
+  } catch (e) {
+    if (e.name === 'AbortError') { const x = new Error('el script tardó demasiado'); x.red = true; throw x; }
+    if (e instanceof TypeError) { e.red = true; }   // fetch sin red o bloqueado
+    throw e;
+  } finally { clearTimeout(t); }
+}
+
+// ======================================================================= leer el guion del Google Doc
+const TITULOS = ['reel', 'notas', 'inspiracion', 'formato', 'aclaraciones produccion', 'aclaraciones post produccion', 'guion'];
+
+function parseGuion(txt) {
+  const lineas = String(txt || '').replace(/^﻿/, '').replace(/\r/g, '').split('\n');
+  const idx = {};
+  lineas.forEach((l, i) => { const n = sinTildes(l).replace(/:$/, ''); if (TITULOS.includes(n) && !(n in idx)) idx[n] = i; });
+  const seccion = n => {
+    if (!(n in idx)) return '';
+    let fin = lineas.length;
+    for (const m in idx) if (idx[m] > idx[n] && idx[m] < fin) fin = idx[m];
+    return lineas.slice(idx[n] + 1, fin).join('\n').trim();
+  };
+  const g = 'guion' in idx ? lineas.slice(idx.guion + 1) : lineas.slice();
+  const reG = /^\s*(Principal|Variaci[oó]n\s*\d+(?:\s*[·\-–—]\s*[^:]+?)?)\s*:\s*(.*)$/i;
+  const reM = /^\s*El cuerpo (?:arranca|empieza|comienza) en\s*:\s*(.*)$/i;
+  let ganchos = [], marcador = '', cuerpoIni = -1, cur = null;
+  for (let i = 0; i < g.length; i++) {
+    const l = g[i];
+    const m = l.match(reM);
+    if (m) { marcador = m[1].trim(); cuerpoIni = i + 1; break; }
+    const h = l.match(reG);
+    if (h) { cur = { etiqueta: h[1].replace(/\s+/g, ' ').trim(), partes: h[2].trim() ? [h[2].trim()] : [] }; ganchos.push(cur); continue; }
+    if (/^\s*Ganchos?\s*:/i.test(l)) continue;
+    if (cur && l.trim()) cur.partes.push(l.trim());
+  }
+  let cuerpo = g;
+  if (cuerpoIni >= 0) {
+    cuerpo = g.slice(cuerpoIni);
+    const clave = sinTildes(marcador).replace(/[.!?¿¡,;:\s]+$/, '').slice(0, 60);
+    if (clave) { const j = cuerpo.findIndex(l => sinTildes(l).startsWith(clave)); if (j > 0) cuerpo = cuerpo.slice(j); }
+  } else {
+    ganchos = [];   // sin el marcador no se sabe dónde termina cada gancho: se muestra todo junto
+  }
+  const parrafos = cuerpo.join('\n').split(/\n\s*\n/).map(p => p.trim()).filter(Boolean);
+  return {
+    ganchos: ganchos.map(h => ({ etiqueta: h.etiqueta, texto: h.partes.join('\n\n') })).filter(h => h.texto),
+    cuerpo: parrafos,
+    info: { formato: seccion('formato'), inspiracion: seccion('inspiracion'), produccion: seccion('aclaraciones produccion'), post: seccion('aclaraciones post produccion') }
+  };
+}
+
+// Bloques que se muestran, según el modo elegido
+function armarBloques(g, modo) {
+  const b = [];
+  const ganchos = g.ganchos || [];
+  const hayGanchos = ganchos.length > 0;
+  if (modo !== 'cuerpo' || !hayGanchos) {
+    if (hayGanchos && modo !== 'cuerpo') ganchos.forEach((h, i) => {
+      b.push({ t: 'et', x: `Gancho ${i + 1} de ${ganchos.length} · ${h.etiqueta}` });
+      h.texto.split(/\n\s*\n/).forEach(p => b.push({ t: 'p', x: p }));
+    });
+  }
+  if (modo !== 'ganchos' || !hayGanchos) {
+    if (hayGanchos) b.push({ t: 'et', x: 'Cuerpo' });
+    (g.cuerpo || []).forEach(p => b.push({ t: 'p', x: p }));
+  }
+  return b;
+}
+
+const palabrasHabladas = b => b.filter(x => x.t === 'p')
+  .map(x => x.x.replace(/\[[^\]]*\]/g, ' ')).join(' ').split(/\s+/).filter(Boolean).length;
+
+// ======================================================================= la lista
+const claveItem = it => it.fila + '|' + it.titulo;
+
+function pintarLista() {
+  const pend = items.filter(it => !hechos[claveItem(it)]);
+  const hero = $('#hero'); hero.innerHTML = '';
+  const proximo = pend[0];
+  if (proximo) {
+    const c = document.createElement('div'); c.className = 'tarjeta proximo';
+    const t = document.createElement('div'); t.className = 'titulo'; t.textContent = proximo.titulo;
+    const ch = document.createElement('div'); ch.className = 'chips';
+    [proximo.formato, proximo.categoria, proximo.modo].filter(Boolean).forEach(x => { const s = document.createElement('span'); s.className = 'chip'; s.textContent = x; ch.appendChild(s); });
+    c.append(t, ch);
+    if (proximo.angulo) { const a = document.createElement('p'); a.className = 'ayuda'; a.textContent = proximo.angulo; c.appendChild(a); }
+    const b = document.createElement('button'); b.className = 'principal'; b.style.fontSize = '18px'; b.textContent = '● Grabar este video';
+    b.onclick = () => abrir(proximo);
+    c.appendChild(b); hero.appendChild(c);
+  } else if (items.length) {
+    const p = document.createElement('p'); p.className = 'ayuda'; p.textContent = 'Ya grabaste todos los videos de la lista desde este dispositivo. Los de abajo siguen en Grabar en la planilla.';
+    hero.appendChild(p);
+  }
+  const resto = $('#resto'); resto.innerHTML = '';
+  const orden = items.filter(it => it !== proximo);
+  $('#tituloResto').classList.toggle('escondido', !orden.length);
+  orden.forEach(it => {
+    const hecho = hechos[claveItem(it)];
+    const d = document.createElement('div'); d.className = 'item' + (hecho ? ' hecho' : '');
+    const n = document.createElement('div'); n.className = 'num'; n.textContent = hecho ? '' : '·';
+    const nom = document.createElement('div'); nom.className = 'nombre'; nom.textContent = it.titulo;
+    const sm = document.createElement('small'); sm.textContent = [it.formato, hecho ? 'grabado ' + hecho.n + (hecho.n > 1 ? ' veces' : ' vez') : ''].filter(Boolean).join(' · ');
+    nom.appendChild(sm);
+    const b = document.createElement('button'); b.textContent = hecho ? 'Otra vez' : 'Grabar'; b.onclick = () => abrir(it);
+    d.append(n, nom, b); resto.appendChild(d);
+  });
+}
+
+async function cargarLista(silencioso) {
+  if (!cfg) return;
+  if (!silencioso) $('#estadoLista').textContent = 'Buscando tus videos en la planilla…';
+  try {
+    const j = await llamar('proximos');
+    items = j.items; LS.set('tp2_items', items);
+    // los ✓ de filas que ya no están en Grabar se limpian
+    const vivas = new Set(items.map(claveItem));
+    Object.keys(hechos).forEach(k => { if (!vivas.has(k)) delete hechos[k]; });
+    LS.set('tp2_hechos', hechos);
+    const faltan = items.filter(it => !hechos[claveItem(it)]).length;
+    $('#estadoLista').textContent = `${items.length} video${items.length === 1 ? '' : 's'} en Grabar (te faltan ${faltan}). Actualizado a las ${new Date().toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', hour12: false })}`;
+    pintarLista();
+    precargarGuiones();
+  } catch (e) {
+    $('#estadoLista').textContent = e.message === 'clave'
+      ? 'El script no aceptó la clave. Tocá ⚙ y volvé a conectar.'
+      : 'No pude leer la planilla (' + (e.message || e.name) + '). ' + (items.length ? 'Te muestro la última lista que guardé.' : 'Probá Actualizar.');
+    pintarLista();
+  }
+}
+
+// Guiones guardados en el dispositivo: se puede grabar aunque se corte internet
+const claveGuion = id => 'tp2_g_' + id;
+async function traerGuion(it, forzar) {
+  if (!it.docId) throw new Error('esta fila no tiene el Google Doc del guion');
+  const guardado = LS.get(claveGuion(it.docId));
+  if (guardado && !forzar) return guardado;
+  const j = await llamar('guion', { id: it.docId });
+  LS.set(claveGuion(it.docId), j.texto);
+  return j.texto;
+}
+async function precargarGuiones() {
+  const vivos = new Set(items.map(i => i.docId).filter(Boolean));
+  try { for (let i = localStorage.length - 1; i >= 0; i--) { const k = localStorage.key(i); if (k && k.startsWith('tp2_g_') && !vivos.has(k.slice(6))) localStorage.removeItem(k); } } catch (e) {}
+  for (const it of items.filter(i => !hechos[claveItem(i)]).slice(0, 3)) {
+    if (!it.docId || LS.get(claveGuion(it.docId))) continue;
+    try { await traerGuion(it, true); } catch (e) { return; }
+  }
+}
+
+// ======================================================================= cámara y pantalla de grabar
+function vista(id) {
+  document.querySelectorAll('.vista').forEach(v => v.classList.remove('activa'));
+  $(id).classList.add('activa');
+}
+
+async function prenderCamara() {
+  if (stream && stream.getTracks().every(t => t.readyState === 'live')) return true;
+  try {
+    const medida = esCelular ? { width: { ideal: 1080 }, height: { ideal: 1920 }, aspectRatio: { ideal: 9 / 16 } }   // vertical, para reels
+                             : { width: { ideal: 1920 }, height: { ideal: 1080 } };
+    stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: pref.facing, ...medida, frameRate: { ideal: 30 } },
+      audio: { echoCancellation: true, noiseSuppression: true }
+    });
+    try { await screen.orientation.lock('portrait'); } catch (e) {}   // iPhone no lo permite: ahí avisa el cartel de abajo
+    const v = $('#camara'); v.srcObject = stream; v.classList.toggle('espejo', pref.facing === 'user');
+    $('#error').style.display = 'none';
+    return true;
+  } catch (e) {
+    $('#error').style.display = 'block';
+    $('#error').textContent = 'No pude usar la cámara (' + (e.name || e) + '). Dale permiso de Cámara y Micrófono a esta página y volvé a abrirla.';
+    return false;
+  }
+}
+function apagarCamara() {
+  if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
+  $('#camara').srcObject = null;
+}
+
+async function abrir(it) {
+  actual = { item: it, guion: null, texto: '' };
+  tomaActual = null;
+  vista('#grabar');
+  $('#titulo').textContent = it.titulo;
+  $('#texto').innerHTML = '<p class="vacio">Cargando el guion…</p>';
+  reiniciarTexto(); modo('listo'); aplicarPref();
+  prenderCamara().then(async ok => { if (ok) try { wake = await navigator.wakeLock?.request('screen'); } catch (e) {} });
+  try {
+    const cacheado = it.docId ? LS.get(claveGuion(it.docId)) : null;
+    let txt = cacheado || await traerGuion(it, true);
+    if (!actual || actual.item !== it) return;
+    cargarGuionEnPantalla(txt);
+    if (cacheado) {   // por si lo editaron: refresco en silencio mientras no se graba
+      traerGuion(it, true).then(nuevo => { if (nuevo !== txt && actual && actual.item === it && !grabador_activo()) { txt = nuevo; cargarGuionEnPantalla(nuevo); } }).catch(() => {});
+    }
+  } catch (e) {
+    $('#texto').innerHTML = '';
+    const p = document.createElement('p'); p.className = 'vacio'; p.textContent = 'No pude traer el guion: ' + (e.message || e.name) + '. Volvé a la lista y probá de nuevo.';
+    $('#texto').appendChild(p);
+  }
+}
+
+function grabador_activo() { return grabador && grabador.state === 'recording'; }
+
+function cargarGuionEnPantalla(txt) {
+  actual.texto = txt; actual.guion = parseGuion(txt);
+  const g = actual.guion;
+  if (!g.ganchos.length && pref.modo !== 'todo') pref.modo = 'todo';
+  $('#bModo').classList.toggle('escondido', !g.ganchos.length);
+  pintarTexto(); armarInfo();
+}
+
+function pintarTexto() {
+  if (!actual || !actual.guion) return;
+  const t = $('#texto'); t.innerHTML = '';
+  const bloques = armarBloques(actual.guion, pref.modo);
+  if (!bloques.length) {
+    const p = document.createElement('p'); p.className = 'vacio'; p.textContent = 'Este documento no tiene el guion escrito todavía.';
+    t.appendChild(p);
+  }
+  bloques.forEach(b => {
+    if (b.t === 'et') { const d = document.createElement('div'); d.className = 'et'; d.textContent = b.x; t.appendChild(d); return; }
+    const p = document.createElement('p');
+    b.x.split(/(\[[^\]]*\])/).forEach(parte => {
+      if (!parte) return;
+      if (/^\[[^\]]*\]$/.test(parte)) { const s = document.createElement('span'); s.className = 'nota'; s.textContent = parte + ' '; p.appendChild(s); }
+      else p.appendChild(document.createTextNode(parte));
+    });
+    t.appendChild(p);
+  });
+  t.classList.toggle('conNotas', !!pref.notas);
+  const pal = palabrasHabladas(bloques), seg = Math.round(pal / pref.ppm * 60);
+  $('#duracion').textContent = pal ? `${pal} palabras · ≈ ${Math.floor(seg / 60)}:${String(seg % 60).padStart(2, '0')}` : '';
+  reiniciarTexto();
+}
+
+function armarInfo() {
+  const i = actual.guion.info, it = actual.item, box = $('#info'); box.innerHTML = '';
+  const add = (tit, txt) => { if (!txt) return; const h = document.createElement('h3'); h.textContent = tit; const p = document.createElement('p'); p.textContent = txt; box.append(h, p); };
+  const h1 = document.createElement('div'); h1.style.fontSize = '22px'; h1.style.fontWeight = '700'; h1.textContent = it.titulo; box.appendChild(h1);
+  add('Formato', i.formato || it.formato); add('Categoría', it.categoria); add('Ángulo', it.angulo); add('Recurso', it.recurso);
+  add('Qué se toma de la inspiración y cómo grabarlo', i.produccion); add('Para quien edita', i.post);
+  const url = (i.inspiracion || it.inspiracion || '').match(/https?:\/\/\S+/);
+  if (url) { const h = document.createElement('h3'); h.textContent = 'Video de inspiración'; const a = document.createElement('a'); a.href = url[0]; a.target = '_blank'; a.rel = 'noopener'; a.textContent = url[0]; const p = document.createElement('p'); p.appendChild(a); box.append(h, p); }
+  const cerrar = document.createElement('button'); cerrar.className = 'principal'; cerrar.style.marginTop = '18px'; cerrar.textContent = 'Cerrar';
+  cerrar.onclick = () => $('#info').classList.add('escondido'); box.appendChild(cerrar);
+}
+
+// ---------- el texto que sube
+function aplicarPref() {
+  $('#texto').style.fontSize = pref.letra + 'px';
+  $('#velo').textContent = pref.ppm + ' pal/min';
+  $('#bModo').textContent = { todo: 'Todo', ganchos: 'Ganchos', cuerpo: 'Cuerpo' }[pref.modo];
+  $('#bNotas').classList.toggle('activo', !!pref.notas);
+  $('#texto').classList.toggle('conNotas', !!pref.notas);
+  $('#grabar').classList.toggle('llenar', !!pref.llenar);
+  $('#camara').classList.toggle('espejo', pref.facing === 'user');
+  LS.set('tp2_pref', pref);
+}
+function reiniciarTexto() { desplazado = 0; $('#texto').style.transform = 'translateY(0)'; }
+function aplicarDesplazo() { $('#texto').style.transform = `translateY(${-desplazado}px)`; }
+function pxPorSegundo() {
+  const t = $('#texto');
+  const alto = t.scrollHeight - (parseFloat(getComputedStyle(t).paddingBottom) || 0);
+  const pal = Math.max(1, actual && actual.guion ? palabrasHabladas(armarBloques(actual.guion, pref.modo)) : 1);
+  return pref.ppm / 60 * (alto / pal);
+}
+function correr(t) {
+  if (ultimo) desplazado += pxPorSegundo() * (t - ultimo) / 1000;
+  ultimo = t; aplicarDesplazo();
+  animacion = requestAnimationFrame(correr);
+}
+function maxDesplazo() { const t = $('#texto'); return Math.max(0, t.scrollHeight - (parseFloat(getComputedStyle(t).paddingBottom) || 0)); }
+
+$('#ajustes').onclick = async e => {
+  const b = e.target.closest('button'); const a = b && b.dataset.a; if (!a) return;
+  if (a === 'lento') pref.ppm = Math.max(40, pref.ppm - 10);
+  if (a === 'rapido') pref.ppm = Math.min(240, pref.ppm + 10);
+  if (a === 'chica') pref.letra = Math.max(18, pref.letra - 2);
+  if (a === 'grande') pref.letra = Math.min(64, pref.letra + 2);
+  if (a === 'arriba') { reiniciarTexto(); }
+  if (a === 'encuadre') pref.llenar = !pref.llenar;
+  if (a === 'notas') pref.notas = !pref.notas;
+  if (a === 'info') $('#info').classList.toggle('escondido');
+  if (a === 'modo' && actual && actual.guion && actual.guion.ganchos.length && !grabador_activo()) { pref.modo = { todo: 'ganchos', ganchos: 'cuerpo', cuerpo: 'todo' }[pref.modo]; pintarTexto(); }
+  if (a === 'camara' && !grabador_activo()) { pref.facing = pref.facing === 'user' ? 'environment' : 'user'; apagarCamara(); await prenderCamara(); }
+  aplicarPref();
+};
+// Tocar el texto lo pausa/sigue mientras se graba; arrastrarlo lo mueve
+(function () {
+  const c = $('#cartel'); let y0 = null, d0 = 0, arrastro = false;
+  c.addEventListener('pointerdown', e => { y0 = e.clientY; d0 = desplazado; arrastro = false; c.setPointerCapture(e.pointerId); });
+  c.addEventListener('pointermove', e => {
+    if (y0 === null) return;
+    if (Math.abs(e.clientY - y0) > 6) arrastro = true;
+    if (arrastro) { desplazado = Math.min(maxDesplazo(), Math.max(0, d0 + (y0 - e.clientY))); aplicarDesplazo(); }
+  });
+  c.addEventListener('pointerup', () => {
+    if (y0 !== null && !arrastro && grabador_activo()) {
+      if (animacion) { cancelAnimationFrame(animacion); animacion = null; ultimo = 0; }
+      else animacion = requestAnimationFrame(correr);
+    }
+    y0 = null;
+  });
+  c.addEventListener('wheel', e => { e.preventDefault(); desplazado = Math.min(maxDesplazo(), Math.max(0, desplazado + e.deltaY)); aplicarDesplazo(); }, { passive: false });
+})();
+
+// ---------- grabar
+function tipoDeVideo() {
+  for (const t of ['video/mp4;codecs=avc1,mp4a.40.2', 'video/mp4', 'video/webm;codecs=vp9,opus', 'video/webm'])
+    if (window.MediaRecorder && MediaRecorder.isTypeSupported(t)) return t;
+  return '';
+}
+function modo(m) {
+  $('#acciones').classList.toggle('escondido', m === 'revision');
+  $('#despues').classList.toggle('escondido', m !== 'revision');
+  $('#ajustes').classList.toggle('escondido', m === 'revision');
+  $('#cartel').classList.toggle('escondido', m === 'revision');
+  $('#titulo').classList.toggle('escondido', m === 'revision');
+  $('#duracion').classList.toggle('escondido', m !== 'listo');
+  $('#revisionInfo').classList.toggle('escondido', m !== 'revision');
+  $('#subidas').classList.add('escondido');
+  $('#revision').classList.toggle('escondido', m !== 'revision');
+  $('#camara').classList.toggle('escondido', m === 'revision');
+  $('#reloj').classList.toggle('on', m === 'grabando');
+  $('#rec').textContent = m === 'grabando' ? '■ Parar' : '● Grabar';
+  $('#volver').classList.toggle('escondido', m === 'grabando');
+}
+async function cuentaRegresiva() {
+  const c = $('#cuenta'); c.style.display = 'flex';
+  for (const n of [3, 2, 1]) { c.textContent = n; await esperar(800); }
+  c.style.display = 'none';
+}
+
+async function alternarGrabacion() {
+  if (!actual || contando) return;
+  if (grabador_activo()) { parar(false); return; }
+  if (!(await prenderCamara())) return;
+  $('#info').classList.add('escondido');
+  reiniciarTexto();
+  contando = true; await cuentaRegresiva(); contando = false;
+  if (!$('#grabar').classList.contains('activa')) return;
+  partes = [];
+  const tipo = tipoDeVideo();
+  try {
+    grabador = new MediaRecorder(stream, tipo ? { mimeType: tipo, videoBitsPerSecond: 5000000 } : undefined);
+  } catch (e) { alert('Este navegador no puede grabar video: ' + e.message); return; }
+  grabador.ondataavailable = e => { if (e.data && e.data.size) partes.push(e.data); };
+  const g = grabador; g.onstop = () => terminado(g);
+  g.start(1000);
+  inicio = Date.now(); ultimo = 0;
+  animacion = requestAnimationFrame(correr);
+  clearInterval(relojId);
+  relojId = setInterval(() => { const s = Math.floor((Date.now() - inicio) / 1000); $('#reloj').textContent = Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); }, 500);
+  modo('grabando');
+}
+$('#rec').onclick = alternarGrabacion;
+
+function parar(descartar) {
+  if (animacion) { cancelAnimationFrame(animacion); animacion = null; }
+  ultimo = 0;
+  if (grabador_activo()) { grabador._descartar = descartar; grabador.stop(); }
+}
+
+function nombreDeArchivo(it, n, ext) {
+  const d = new Date(), p = x => String(x).padStart(2, '0');
+  const fecha = `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}-${p(d.getMinutes())}`;
+  return `${it.titulo} · ${fecha} · toma ${n}.${ext}`.replace(/[\\\/]/g, '-');
+}
+
+function terminado(g) {
+  clearInterval(relojId); if (animacion) { cancelAnimationFrame(animacion); animacion = null; } ultimo = 0;
+  if (g._descartar) { modo('listo'); return; }
+  const tipo = (g.mimeType || tipoDeVideo() || 'video/mp4').split(';')[0];
+  const blob = new Blob(partes, { type: tipo }); partes = [];
+  if (blob.size < 2000) { alert('No se grabó nada. Probá de nuevo.'); modo('listo'); return; }
+  const it = actual.item, k = claveItem(it);
+  const h = hechos[k] || { n: 0 }; h.n += 1; hechos[k] = h; LS.set('tp2_hechos', hechos);
+  const u = encolar({ nombre: nombreDeArchivo(it, h.n, tipo.includes('mp4') ? 'mp4' : 'webm'), tipo, blob, titulo: it.titulo });
+  tomaActual = u;
+  const v = $('#revision'); if (v.dataset.url) URL.revokeObjectURL(v.dataset.url);
+  v.dataset.url = URL.createObjectURL(blob); v.src = v.dataset.url;
+  modo('revision'); pintarSubidas();
+}
+
+function liberarRevision() { const v = $('#revision'); v.pause(); if (v.dataset.url) { URL.revokeObjectURL(v.dataset.url); delete v.dataset.url; } v.removeAttribute('src'); try { v.load(); } catch (e) {} }
+$('#otraVez').onclick = () => { liberarRevision(); tomaActual = null; modo('listo'); reiniciarTexto(); };
+$('#descartar').onclick = async () => {
+  if (!tomaActual) return;
+  if (!confirm('¿Descartar esta toma? Se cancela la subida o se manda a la papelera de Drive si ya subió.')) return;
+  const u = tomaActual; tomaActual = null;
+  liberarRevision(); modo('listo'); reiniciarTexto();
+  await descartarSubida(u);
+  const k = claveItem(actual.item), h = hechos[k]; if (h) { h.n = Math.max(0, h.n - 1); if (!h.n) delete hechos[k]; LS.set('tp2_hechos', hechos); }
+};
+$('#siguiente').onclick = () => {
+  liberarRevision();
+  const sig = items.find(it => !hechos[claveItem(it)]);
+  if (sig) abrir(sig); else volverALista();
+};
+function volverALista() {
+  if (grabador_activo()) return;
+  liberarRevision(); apagarCamara();
+  try { wake && wake.release && wake.release(); } catch (e) {}
+  actual = null; tomaActual = null;
+  vista('#lista'); pintarLista(); cargarLista(true);
+}
+$('#volver').onclick = volverALista;
+document.addEventListener('visibilitychange', async () => {
+  if (document.visibilityState === 'visible' && $('#grabar').classList.contains('activa')) { try { wake = await navigator.wakeLock?.request('screen'); } catch (e) {} }
+  if (document.visibilityState === 'visible') { if (cola.some(u => u.estado === 'fallo')) reintentar(); else if (subiendo) pantallaEncendida(true); }
+  if (document.visibilityState === 'visible' && $('#lista').classList.contains('activa')) cargarLista(true);
+});
+document.addEventListener('keydown', e => {
+  if (!$('#grabar').classList.contains('activa') || /^(INPUT|TEXTAREA)$/.test(e.target.tagName)) return;
+  if (e.code === 'Space') { e.preventDefault(); if (document.activeElement) document.activeElement.blur(); if (!$('#despues').classList.contains('escondido')) return; alternarGrabacion(); }
+  if (e.code === 'ArrowUp') { pref.ppm = Math.min(240, pref.ppm + 10); aplicarPref(); }
+  if (e.code === 'ArrowDown') { pref.ppm = Math.max(40, pref.ppm - 10); aplicarPref(); }
+  if (e.code === 'Escape') volverALista();
+});
+
+// ======================================================================= subida a Drive (en segundo plano)
+const TRAMO_DIRECTO = 8 * 1024 * 1024;     // múltiplos de 256 KiB, lo que pide Drive
+const TRAMO_PROXY = 3 * 1024 * 1024;
+let cola = [];                             // subidas de esta sesión (con su blob)
+const SESION_RE = /^https:\/\/www\.googleapis\.com\/upload\/drive\/v3\/files\?/;   // solo se sube a Drive
+
+const IDB = (() => {
+  let db = null;
+  const abrir = () => new Promise((ok, mal) => {
+    if (db) return ok(db);
+    if (!window.indexedDB) return mal(new Error('sin IndexedDB'));
+    const r = indexedDB.open('tp_grabar', 1);
+    r.onupgradeneeded = () => { r.result.createObjectStore('meta', { keyPath: 'id' }); r.result.createObjectStore('videos'); };
+    r.onsuccess = () => { db = r.result; db.onclose = () => { db = null; }; db.onversionchange = () => { db.close(); db = null; }; ok(db); };
+    r.onerror = () => mal(r.error);
+  });
+  const tx = async (stores, modo, fn, reintento) => {
+    try {
+      const d = await abrir();
+      return await new Promise((ok, mal) => {
+        const t = d.transaction(stores, modo); let q;
+        try { q = fn(...stores.map(s => t.objectStore(s))); } catch (e) { return mal(e); }
+        t.oncomplete = () => ok(q && q.result); t.onerror = () => mal(t.error); t.onabort = () => mal(t.error);
+      });
+    } catch (e) {
+      if (!reintento && e && e.name === 'InvalidStateError') { db = null; return tx(stores, modo, fn, true); }
+      return null;                   // sin IndexedDB (ventana privada): se sigue en memoria
+    }
+  };
+  return {
+    guardar: (meta, blob) => tx(['meta', 'videos'], 'readwrite', (m, v) => { m.put(meta); if (blob) v.put(blob, meta.id); }),
+    meta: meta => tx(['meta'], 'readwrite', m => m.put(meta)),
+    quitar: id => tx(['meta', 'videos'], 'readwrite', (m, v) => { m.delete(id); v.delete(id); }),
+    metas: () => tx(['meta'], 'readonly', m => m.getAll()),
+    video: id => tx(['videos'], 'readonly', v => v.get(id))
+  };
+})();
+
+const metaDe = u => ({ id: u.id, nombre: u.nombre, tipo: u.tipo, tam: u.tam, sesion: u.sesion || null, subido: u.subido || 0, estado: u.estado, archivoId: u.archivoId || null, link: u.link || null, titulo: u.titulo });
+
+function encolar({ nombre, tipo, blob, titulo }) {
+  const u = { id: 'u' + Math.random().toString(36).slice(2, 10) + cola.length, nombre, tipo, blob, tam: blob.size, titulo, subido: 0, pct: 0, estado: 'espera', sesion: null };
+  cola.push(u); IDB.guardar(metaDe(u), blob);
+  procesarCola();
+  return u;
+}
+
+function putDirecto(u, parte, desde, total) {
+  return new Promise((ok, mal) => {
+    if (!SESION_RE.test(u.sesion)) return mal(new Error('sesión inválida'));
+    const x = new XMLHttpRequest();
+    x.open('PUT', u.sesion);
+    x.timeout = 90000;
+    x.setRequestHeader('Content-Range', `bytes ${desde}-${desde + parte.size - 1}/${total}`);
+    x.upload.onprogress = e => { u.pct = Math.min(99, Math.round((desde + e.loaded) * 100 / total)); pintarSubidas(); };
+    x.onload = () => {
+      if (x.status === 308) { const m = (x.getResponseHeader('Range') || '').match(/bytes=0-(\d+)/); ok({ listo: false, recibido: m ? Number(m[1]) + 1 : desde + parte.size }); }
+      else if (x.status === 200 || x.status === 201) { let a = {}; try { a = JSON.parse(x.responseText); } catch (e) {} ok({ listo: true, recibido: total, archivo: { id: a.id, nombre: a.name, link: a.webViewLink } }); }
+      else { const e = new Error('drive ' + x.status); e.codigo = x.status; mal(e); }
+    };
+    x.onerror = x.ontimeout = () => { const e = new Error('red'); e.red = true; mal(e); };
+    x.send(parte);
+  });
+}
+
+function aBase64(blob) {
+  return new Promise((ok, mal) => { const r = new FileReader(); r.onload = () => ok(String(r.result).split(',')[1] || ''); r.onerror = () => mal(r.error); r.readAsDataURL(blob); });
+}
+async function putProxy(u, parte, desde, total) {
+  const j = await llamar('chunk', { sesion: u.sesion, desde, total, datos: await aBase64(parte) }, true);
+  u.pct = Math.min(99, Math.round((desde + parte.size) * 100 / total)); pintarSubidas();
+  return j;
+}
+
+async function sincronizar(u) {   // le pregunta a Drive (vía el script) cuánto de este video ya tiene
+  const j = await llamar('estado', { sesion: u.sesion, total: u.tam }, true);
+  if (j.listo) return j;
+  u.subido = j.recibido || 0; return j;
+}
+
+async function subirUna(u) {
+  if (!u.blob) { u.blob = await IDB.video(u.id); if (!u.blob) throw Object.assign(new Error('el video ya no está en este dispositivo'), { perdido: true }); }
+  const cancelada = () => { if (u.cancelado) throw Object.assign(new Error('cancelada'), { cancelada: true }); };
+  cancelada();
+  if (!u.sesion) {
+    const j = await llamar('iniciar', { nombre: u.nombre, tipo: u.tipo, tam: u.tam, origen: location.origin }, true);
+    if (!SESION_RE.test(j.sesion)) throw new Error('el script devolvió una subida que no es de Drive');
+    u.sesion = j.sesion; u.subido = 0;
+    if (u.cancelado) { try { await llamar('cancelar', { sesion: u.sesion }, true); } catch (e) {} cancelada(); }
+    await IDB.meta(metaDe(u));
+  } else {
+    try { const j = await sincronizar(u); if (j.listo) return terminarSubida(u, j.archivo); }
+    catch (e) { if (!e.red) { u.sesion = null; u.subido = 0; return subirUna(u); } throw e; }   // la sesión venció: empiezo de nuevo
+  }
+  while (u.subido < u.tam) {
+    cancelada();
+    const tramo = u.proxy ? TRAMO_PROXY : TRAMO_DIRECTO;
+    const desde = u.subido, parte = u.blob.slice(desde, Math.min(desde + tramo, u.tam));
+    let r;
+    try {
+      r = u.proxy ? await putProxy(u, parte, desde, u.tam) : await putDirecto(u, parte, desde, u.tam);
+    } catch (e) {
+      cancelada();
+      if (!u.proxy && e.red) {                       // el navegador no pudo hablar directo con Drive: sigo por el script, solo para este video
+        const j = await sincronizar(u);              // cuánto alcanzó a guardar Drive
+        if (j.listo) return terminarSubida(u, j.archivo);
+        const d2 = u.subido;
+        r = await putProxy(u, u.blob.slice(d2, Math.min(d2 + TRAMO_PROXY, u.tam)), d2, u.tam);
+        u.proxy = true;
+      } else if (e.codigo === 404 || e.codigo === 410) { u.sesion = null; u.subido = 0; return subirUna(u); }
+      else { try { await sincronizar(u); } catch (x) {} throw e; }
+    }
+    if (r.listo) return terminarSubida(u, r.archivo);
+    u.subido = Math.max(r.recibido, u.subido); if (!u.cancelado) await IDB.meta(metaDe(u));
+  }
+  const j = await sincronizar(u); if (j.listo) return terminarSubida(u, j.archivo);   // por si el último tramo no devolvió la confirmación
+  throw new Error('Drive no confirmó el video completo');
+}
+
+function terminarSubida(u, archivo) {
+  u.estado = 'listo'; u.pct = 100; u.archivoId = archivo && archivo.id; u.link = archivo && archivo.link;
+  u.blob = null; IDB.quitar(u.id);
+  if (u.cancelado && u.archivoId) llamar('papelera', { id: u.archivoId }, true).catch(() => {});   // se descartó justo cuando terminaba
+  const hist = LS.get('tp2_hist') || []; hist.unshift({ nombre: u.nombre, link: u.link, id: u.archivoId }); LS.set('tp2_hist', hist.slice(0, 30));
+  if (u.estado === 'listo') cola = cola.filter(x => x !== u || x === tomaActual);
+}
+
+let subiendo = false, lockSubida = null;
+async function pantallaEncendida(on) {   // mientras sube, que el celular no se bloquee
+  try {
+    if (on && !lockSubida) { lockSubida = await navigator.wakeLock?.request('screen'); if (lockSubida) lockSubida.onrelease = () => { lockSubida = null; }; }
+    else if (!on && lockSubida) { await lockSubida.release(); lockSubida = null; }
+  } catch (e) { lockSubida = null; }
+}
+async function procesarCola() {
+  if (subiendo) return; subiendo = true;
+  pantallaEncendida(true);
+  try {
+    for (;;) {
+      const u = cola.find(x => x.estado === 'espera' || x.estado === 'subiendo');
+      if (!u) break;
+      u.estado = 'subiendo'; u.error = null; pintarSubidas();
+      let bien = false;
+      for (let intento = 0; intento < 5 && !bien && !u.cancelado; intento++) {
+        try { if (intento) await esperar(3000 * intento); await subirUna(u); bien = true; }
+        catch (e) { u.error = e.message; if (e.perdido) u.perdido = true; if (e.cancelada || e.perdido) break; }
+      }
+      if (!bien) {
+        if (u.cancelado || u.perdido) { IDB.quitar(u.id); cola = cola.filter(x => x !== u); }   // nada que reintentar
+        else u.estado = 'fallo';
+      }
+      pintarSubidas();
+    }
+  } finally { subiendo = false; pantallaEncendida(false); }
+}
+
+async function descartarSubida(u) {
+  u.cancelado = true;
+  try {
+    if (u.estado === 'listo' && u.archivoId) await llamar('papelera', { id: u.archivoId }, true);
+    else if (u.sesion) await llamar('cancelar', { sesion: u.sesion }, true);
+  } catch (e) { alert('No pude borrarla de Drive (' + e.message + '). Si quedó, borrala a mano de la carpeta.'); }
+  cola = cola.filter(x => x !== u); IDB.quitar(u.id); pintarSubidas();
+}
+
+function textoSubida(u) {
+  if (u.estado === 'listo') return { t: '✓ Subido a tu Drive', c: 'bien', pct: 100 };
+  if (u.estado === 'fallo') return { t: '⚠ No pude subirlo (' + (u.error || 'error') + '). Queda guardado en este dispositivo.', c: 'mal', pct: u.pct };
+  if (u.estado === 'espera') return { t: 'En cola para subir…', c: '', pct: 0 };
+  return { t: `Subiendo a tu Drive… ${u.pct || 0}%`, c: '', pct: u.pct || 0 };
+}
+
+function pintarSubidas() {
+  const vivas = cola.filter(u => u.estado !== 'listo');
+  const malas = vivas.filter(u => u.estado === 'fallo');
+  const activas = vivas.filter(u => u.estado !== 'fallo');
+  // pastilla de la lista
+  const sl = $('#subidasLista');
+  let txt = '';
+  if (activas.length) txt += `Subiendo ${activas[0].titulo}: ${activas[0].pct || 0}%` + (activas.length > 1 ? ` (y ${activas.length - 1} más)` : '') + ' · No bloquees el celular hasta que termine';
+  if (malas.length) txt += (txt ? ' · ' : '') + '⚠ No subieron: ' + malas.map(m => m.titulo).join(', ');
+  sl.textContent = txt; sl.className = 'pildora' + (malas.length ? ' mal' : '') + (txt ? '' : ' escondido');
+  $('#filaReintentar').classList.toggle('escondido', !malas.length);
+  // toma que se está revisando
+  const ri = $('#revisionInfo');
+  if (tomaActual && !$('#revision').classList.contains('escondido')) {
+    const s = textoSubida(tomaActual);
+    ri.innerHTML = '';
+    const d = document.createElement('div'); d.className = 'pildora ' + s.c; d.textContent = s.t;
+    const b = document.createElement('div'); b.className = 'barra'; const i = document.createElement('i'); i.style.width = s.pct + '%'; b.appendChild(i); d.appendChild(b);
+    ri.appendChild(d);
+    if (tomaActual.estado === 'listo' && tomaActual.link) { const a = document.createElement('a'); a.href = tomaActual.link; a.target = '_blank'; a.rel = 'noopener'; a.className = 'pildora'; a.textContent = 'Abrir en Drive: ' + tomaActual.nombre; ri.appendChild(a); }
+    if (tomaActual.estado === 'fallo') { const r = document.createElement('button'); r.className = 'principal'; r.textContent = 'Reintentar subida'; r.onclick = reintentar; ri.appendChild(r); }
+  }
+}
+function reintentar() { cola.forEach(u => { if (u.estado === 'fallo') { u.estado = 'espera'; u.error = null; } }); pintarSubidas(); procesarCola(); }
+$('#reintentar').onclick = reintentar;
+window.addEventListener('online', reintentar);
+window.addEventListener('beforeunload', e => { if (grabador_activo() || cola.some(u => u.estado === 'subiendo' || u.estado === 'espera')) { e.preventDefault(); e.returnValue = ''; } });
+
+// Videos que quedaron sin subir la última vez (se cortó internet, se cerró la pestaña…)
+async function retomarPendientes() {
+  const metas = (await IDB.metas()) || [];
+  for (const m of metas) {
+    if (cola.some(u => u.id === m.id)) continue;
+    cola.push(Object.assign({}, m, { estado: 'espera', pct: m.tam ? Math.round(m.subido * 100 / m.tam) : 0, blob: null }));
+  }
+  if (metas.length) { pintarSubidas(); procesarCola(); }
+}
+
+// ======================================================================= conexión inicial
+function leerHash() {
+  const p = new URLSearchParams(location.hash.slice(1));
+  const s = normalizarScript(p.get('s')), k = (p.get('k') || '').trim();
+  if (s && k) {
+    const igual = cfg && cfg.s === s && cfg.k === k;
+    if (igual || !cfg || confirm('Este link trae otra conexión distinta de la que ya está guardada. ¿Reemplazarla?')) { cfg = { s, k }; LS.set('tp2_cfg', cfg); }
+  }
+}
+$('#cfgGuardar').onclick = async () => {
+  const s = normalizarScript($('#cfgS').value), k = $('#cfgK').value.trim();
+  if (!s || !k) { $('#cfgMsg').textContent = 'Faltan los dos datos.'; return; }
+  cfg = { s, k }; $('#cfgMsg').textContent = 'Probando…';
+  try { await llamar('ping'); LS.set('tp2_cfg', cfg); iniciar(); }
+  catch (e) { cfg = LS.get('tp2_cfg'); $('#cfgMsg').textContent = 'No conectó (' + (e.message || e.name) + '). Revisá la dirección y la clave.'; }
+};
+$('#ajustesBtn').onclick = () => {
+  const pend = cola.filter(u => u.estado !== 'listo').length;
+  if (!confirm('¿Desconectar esta página de tu Google? Se borran de este dispositivo la conexión, los guiones guardados' + (pend ? ' y ' + pend + ' video(s) que todavía NO terminaron de subir' : '') + '.')) return;
+  try { Object.keys(localStorage).filter(k => k.startsWith('tp2_')).forEach(k => localStorage.removeItem(k)); } catch (e) {}
+  try { indexedDB.deleteDatabase('tp_grabar'); } catch (e) {}
+  cfg = null; items = []; hechos = {}; cola = []; iniciar();
+};
+$('#actualizar').onclick = () => cargarLista(false);
+
+function iniciar() {
+  if (!cfg) { vista('#config'); return; }
+  vista('#lista'); pintarLista(); cargarLista(false); retomarPendientes();
+}
+if (esCelular) document.querySelector('[data-a=encuadre]').classList.add('escondido');
+window.__tp = { parseGuion, armarBloques, palabrasHabladas };   // para las pruebas
+leerHash();
+iniciar();
+</script>
+</body>
+</html>
