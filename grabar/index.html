@@ -355,6 +355,8 @@ function restriccionesCamara() {
   if (pref.orient === 'horizontal') return [{ ...f, width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 30 } }];
   // vertical: iPhone y Android a veces entregan la cámara horizontal según cómo se la pida; se prueba hasta que llegue vertical
   return [
+    { ...f, width: { exact: 1080 }, height: { exact: 1920 }, frameRate: { ideal: 30 } },   // Full HD vertical, exigido
+    { ...f, width: { exact: 1920 }, height: { exact: 1080 }, frameRate: { ideal: 30 } },   // iPhone a veces lo pide en orden de sensor y lo entrega vertical
     { ...f, width: { ideal: 1080 }, height: { ideal: 1920 }, frameRate: { ideal: 30 } },
     { ...f, aspectRatio: { ideal: 9 / 16 }, frameRate: { ideal: 30 } },
     { ...f, width: { exact: 720 }, height: { exact: 1280 } },
@@ -591,7 +593,7 @@ async function alternarGrabacion() {
   partes = [];
   const tipo = tipoDeVideo();
   try {
-    grabador = new MediaRecorder(stream, tipo ? { mimeType: tipo, videoBitsPerSecond: 5000000 } : undefined);
+    grabador = new MediaRecorder(stream, tipo ? { mimeType: tipo, videoBitsPerSecond: 12000000 } : undefined);
   } catch (e) { alert('Este navegador no puede grabar video: ' + e.message); return; }
   grabador.ondataavailable = e => { if (e.data && e.data.size) partes.push(e.data); };
   const g = grabador; g.onstop = () => terminado(g);
